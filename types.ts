@@ -1,4 +1,3 @@
-
 export enum VeggieType {
   TOMATO = "Tomato",
   CARROT = "Carrot",
@@ -9,7 +8,7 @@ export enum VeggieType {
   ZUCCHINI = "Zucchini",
   ONION = "Onion",
   RADISH = "Radish",
-  BASIL = "Basil"
+  BASIL = "Basil",
 }
 
 export type BedShape = "rectangle" | "pill" | "circle";
@@ -28,7 +27,7 @@ export interface SeedVariety {
 
 export interface Vegetable {
   type: VeggieType;
-  priority: number; 
+  priority: number;
   selectedVarieties: SeedVariety[];
 }
 
@@ -65,4 +64,17 @@ export interface GardenState {
   beds: GardenBed[];
   seeds: Vegetable[];
   sunOrientation: SunOrientation;
+}
+
+export type AIProviderId = "gemini" | "openai" | "anthropic" | "local";
+
+export interface ProviderAuth {
+  apiKey?: string;
+  oauthAccessToken?: string;
+}
+
+export interface ProviderSelection {
+  provider: AIProviderId;
+  auth?: ProviderAuth;
+  model?: string;
 }
