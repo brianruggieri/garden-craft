@@ -1,0 +1,5 @@
+{
+  "name": "GardenCraft Visual Designer",
+  "description": "An intelligent garden planning tool that uses AI to optimize vegetable crop layouts based on garden bed dimensions, sun orientation, and plant compatibility.",
+  "requestFramePermissions": []
+}
