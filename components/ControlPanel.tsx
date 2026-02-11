@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   GardenBed,
   Vegetable,
@@ -36,6 +36,8 @@ interface ControlPanelProps {
   onChangeAIModel: (model: string) => void;
   onChangeAIApiKey: (key: string) => void;
   onTriggerOAuth: (provider: string) => void;
+  oauthStatus?: { connected: boolean; expiresAt: number | null } | null;
+  oauthChecking?: boolean;
 }
 
 const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -65,11 +67,169 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   onChangeAIModel,
   onChangeAIApiKey,
   onTriggerOAuth,
+  oauthStatus,
+  oauthChecking,
 }) => {
   const [editingVarieties, setEditingVarieties] = useState<VeggieType | null>(
     null,
   );
   const [showVault, setShowVault] = useState(false);
+
+  // Device flow UI state (for provider device-code sign-in)
+  const [deviceKey, setDeviceKey] = useState<string | null>(null);
+  const [userCode, setUserCode] = useState<string | null>(null);
+  const [verificationUri, setVerificationUri] = useState<string | null>(null);
+  const [deviceExpiresIn, setDeviceExpiresIn] = useState<number | null>(null);
+  const [deviceInterval, setDeviceInterval] = useState<number>(5);
+  const [deviceStatus, setDeviceStatus] = useState<
+    "idle" | "starting" | "pending" | "connected" | "error" | null
+  >("idle");
+  const pollTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      // Clean up poll timer on unmount
+      if (pollTimerRef.current) {
+        window.clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Start device flow: POST to server router device start endpoint.
+  const startDeviceFlow = async () => {
+    if (!aiProvider) return;
+    setDeviceStatus("starting");
+    try {
+      const res = await fetch(`/oauth/${aiProvider}/device/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        setDeviceStatus("error");
+        console.warn("Device start failed:", text);
+        return;
+      }
+      const body = await res.json();
+      setDeviceKey(body.key || null);
+      setUserCode(body.userCode || null);
+      setVerificationUri(
+        body.verificationUri || body.verificationUriComplete || null,
+      );
+      setDeviceExpiresIn(
+        typeof body.expiresIn === "number" ? body.expiresIn : null,
+      );
+      setDeviceInterval(typeof body.interval === "number" ? body.interval : 5);
+      setDeviceStatus("pending");
+
+      // Begin polling
+      if (pollTimerRef.current) {
+        window.clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+      const intervalMs = (body.interval || 5) * 1000;
+      pollTimerRef.current = window.setInterval(async () => {
+        if (!body.key) return;
+        try {
+          const p = await fetch(
+            `/oauth/${aiProvider}/device/poll?key=${encodeURIComponent(body.key)}`,
+            {
+              method: "GET",
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+          // We expect JSON responses for status
+          const payload = await p.json().catch(() => null);
+          if (!p.ok) {
+            // Non-2xx could include provider debug details; handle conservatively
+            if (p.status === 410) {
+              setDeviceStatus("error");
+              window.clearInterval(pollTimerRef.current!);
+              pollTimerRef.current = null;
+            } else if (payload && payload.status === "expired") {
+              setDeviceStatus("error");
+              window.clearInterval(pollTimerRef.current!);
+              pollTimerRef.current = null;
+            } else if (payload && payload.status === "denied") {
+              setDeviceStatus("error");
+              window.clearInterval(pollTimerRef.current!);
+              pollTimerRef.current = null;
+            } else {
+              // still pending
+              setDeviceStatus("pending");
+            }
+          } else {
+            if (payload && payload.status === "pending") {
+              setDeviceStatus("pending");
+            } else if (payload && payload.status === "connected") {
+              setDeviceStatus("connected");
+              // Stop polling
+              if (pollTimerRef.current) {
+                window.clearInterval(pollTimerRef.current);
+                pollTimerRef.current = null;
+              }
+              // Optionally refresh server-side connected status shown elsewhere
+              // fetch the connected endpoint to let server mark token present
+              try {
+                await fetch(`/oauth/${aiProvider}/connected`);
+              } catch (e) {
+                // ignore
+              }
+              // Hide device UI after a short delay
+              setTimeout(() => {
+                setDeviceKey(null);
+                setUserCode(null);
+                setVerificationUri(null);
+              }, 1000);
+            } else {
+              // unknown but keep polling
+              setDeviceStatus("pending");
+            }
+          }
+        } catch (err) {
+          // network error; keep trying until expiry
+        }
+      }, intervalMs);
+    } catch (err) {
+      setDeviceStatus("error");
+      console.warn("Device flow error:", err);
+    }
+  };
+
+  // Stop any active poll and clear device UI
+  const cancelDeviceFlow = () => {
+    if (pollTimerRef.current) {
+      window.clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    setDeviceKey(null);
+    setUserCode(null);
+    setVerificationUri(null);
+    setDeviceStatus("idle");
+  };
+
+  // Disconnect action: tell server to drop stored token for provider (dev-only)
+  const disconnectProvider = async () => {
+    if (!aiProvider) return;
+    try {
+      const res = await fetch(`/oauth/${aiProvider}/disconnect`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        console.warn("Disconnect failed");
+      } else {
+        // Reflect disconnected state locally
+        setDeviceStatus("idle");
+        // optionally notify server status was cleared
+        try {
+          await fetch(`/oauth/${aiProvider}/connected`);
+        } catch (e) {}
+      }
+    } catch (err) {
+      console.warn("Disconnect error", err);
+    }
+  };
 
   const providerOptions =
     aiProviders.length > 0
@@ -284,21 +444,132 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                   />
                 </div>
 
-                <div className="flex items-center justify-between gap-2">
-                  <button
-                    onClick={() => onTriggerOAuth(aiProvider)}
-                    disabled={!oauthEnabled}
-                    className={`text-[10px] font-bold px-3 py-2 rounded-lg border transition-all flex items-center gap-2 ${
-                      oauthEnabled
-                        ? "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
-                        : "bg-slate-50 text-slate-300 border-slate-200 cursor-not-allowed"
-                    }`}
-                  >
-                    <i className="fas fa-link"></i> Connect OAuth
-                  </button>
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                    Server OAuth
-                  </span>
+                <div className="grid grid-cols-2 gap-2 items-center">
+                  <div className="flex items-center justify-between gap-2">
+                    {/* Primary: redirect-based OAuth (existing) */}
+                    <button
+                      onClick={() => onTriggerOAuth(aiProvider)}
+                      disabled={!oauthEnabled}
+                      className={`text-[10px] font-bold px-3 py-2 rounded-lg border transition-all flex items-center gap-2 ${
+                        oauthEnabled
+                          ? "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
+                          : "bg-slate-50 text-slate-300 border-slate-200 cursor-not-allowed"
+                      }`}
+                      title="Start browser-based OAuth flow (uses server redirect)"
+                    >
+                      <i className="fas fa-link"></i> Connect OAuth
+                    </button>
+
+                    {/* Device flow: headless/device sign-in */}
+                    <button
+                      onClick={() => startDeviceFlow()}
+                      disabled={!oauthEnabled}
+                      className={`text-[10px] font-bold px-3 py-2 rounded-lg border transition-all flex items-center gap-2 ${
+                        oauthEnabled
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                          : "bg-slate-50 text-slate-300 border-slate-200 cursor-not-allowed"
+                      }`}
+                      title="Start device code sign-in (for headless or remote environments)"
+                    >
+                      <i className="fas fa-terminal"></i> Device Sign‑in
+                    </button>
+
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                      Server OAuth
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="flex items-center gap-3">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                        API Key
+                      </span>
+                      {aiApiKey ? (
+                        <span className="text-emerald-600 text-[11px] font-bold">
+                          Present
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-[11px]">
+                          Not set
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="text-[11px] flex items-center gap-3">
+                      {oauthChecking ? (
+                        <span className="text-slate-400">OAuth: Checking…</span>
+                      ) : oauthStatus?.connected ? (
+                        <>
+                          <span className="text-emerald-600">
+                            OAuth: Connected
+                          </span>
+                          <button
+                            onClick={() => disconnectProvider()}
+                            className="text-[10px] px-2 py-1 ml-2 rounded bg-red-50 text-red-700 border border-red-100 hover:bg-red-100"
+                            title="Disconnect server-stored OAuth token"
+                          >
+                            Disconnect
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-slate-400">
+                          OAuth: Not connected
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Device flow UI: show user code and verification link when active */}
+                    {deviceKey && (
+                      <div className="mt-2 p-3 bg-slate-50 border border-slate-100 rounded w-full text-xs text-slate-700">
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <div className="text-[10px] font-bold text-slate-500 uppercase">
+                              Device Sign-In
+                            </div>
+                            <div className="mt-1">
+                              <strong>Code:</strong>{" "}
+                              <span className="ml-1 font-mono bg-white px-2 py-1 rounded border">
+                                {userCode}
+                              </span>
+                            </div>
+                            {verificationUri && (
+                              <div className="mt-1">
+                                <a
+                                  href={verificationUri}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-indigo-600 hover:underline"
+                                >
+                                  Open verification URL
+                                </a>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="text-right">
+                            <div className="text-[11px] font-bold">
+                              {deviceStatus === "pending"
+                                ? "Waiting..."
+                                : deviceStatus}
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-1">
+                              Poll interval: {deviceInterval}s
+                            </div>
+                            <div className="mt-2 flex gap-2 justify-end">
+                              <button
+                                onClick={() => {
+                                  cancelDeviceFlow();
+                                }}
+                                className="text-[10px] px-2 py-1 rounded bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </section>

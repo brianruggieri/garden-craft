@@ -56,6 +56,11 @@ const App: React.FC = () => {
   const [aiProviders, setAiProviders] = useState<
     { id: string; name: string; supportsOAuth?: boolean }[]
   >([]);
+  const [oauthStatus, setOauthStatus] = useState<{
+    connected: boolean;
+    expiresAt: number | null;
+  } | null>(null);
+  const [oauthChecking, setOauthChecking] = useState(false);
 
   useEffect(() => {
     const gardenKeys = Object.keys(localStorage).filter((k) =>
@@ -97,6 +102,39 @@ const App: React.FC = () => {
 
     loadProviders();
   }, []);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const checkOAuth = async () => {
+      setOauthChecking(true);
+      try {
+        const res = await fetch(`/oauth/${aiProvider}/connected`);
+        if (!res.ok) {
+          if (isActive) setOauthStatus(null);
+          return;
+        }
+        const data = await res.json();
+        if (isActive) {
+          setOauthStatus({
+            connected: Boolean(data?.connected),
+            expiresAt:
+              typeof data?.expiresAt === "number" ? data.expiresAt : null,
+          });
+        }
+      } catch (err) {
+        if (isActive) setOauthStatus(null);
+      } finally {
+        if (isActive) setOauthChecking(false);
+      }
+    };
+
+    checkOAuth();
+
+    return () => {
+      isActive = false;
+    };
+  }, [aiProvider]);
 
   const handleSaveGarden = (name: string) => {
     const data = { beds, sunOrientation };
@@ -230,6 +268,69 @@ const App: React.FC = () => {
     window.location.href = `/oauth/${provider}/start?redirect=${redirect}`;
   };
 
+  // Start a device-code flow for headless/dev environments.
+  // Returns minimal verification info or null on failure.
+  const handleStartDeviceFlow = async (provider: string) => {
+    if (!provider) return null;
+    try {
+      const res = await fetch(`/oauth/${provider}/device/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) return null;
+      const body = await res.json().catch(() => null);
+      if (!body) return null;
+      return {
+        key: body.key,
+        userCode: body.userCode || null,
+        verificationUri:
+          body.verificationUri || body.verificationUriComplete || null,
+        verificationUriComplete: body.verificationUriComplete || null,
+      };
+    } catch (err) {
+      console.warn("Device start failed", err);
+      return null;
+    }
+  };
+
+  // Poll device flow status once using the provided key.
+  // Returns the provider response (status/payload) or null on error.
+  const handlePollDeviceFlow = async (provider: string, key: string) => {
+    if (!provider || !key) return null;
+    try {
+      const res = await fetch(
+        `/oauth/${provider}/device/poll?key=${encodeURIComponent(key)}`,
+        {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+      const payload = await res.json().catch(() => null);
+      return payload;
+    } catch (err) {
+      console.warn("Device poll failed", err);
+      return null;
+    }
+  };
+
+  // Disconnect provider by clearing the in-memory token on the server (dev-only).
+  // Returns true if a stored connection was removed.
+  const handleDisconnectProvider = async (provider: string) => {
+    if (!provider) return false;
+    try {
+      const res = await fetch(`/oauth/${provider}/disconnect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) return false;
+      const body = await res.json().catch(() => null);
+      return Boolean(body?.disconnected);
+    } catch (err) {
+      console.warn("Disconnect failed", err);
+      return false;
+    }
+  };
+
   const onBedDragStart = (e: React.MouseEvent, id: string) => {
     if (isSpacePressed) return;
     const bed = beds.find((b) => b.id === id);
@@ -324,6 +425,13 @@ const App: React.FC = () => {
         onChangeAIModel={setAiModel}
         onChangeAIApiKey={setAiApiKey}
         onTriggerOAuth={handleTriggerOAuth}
+        // Device flow handlers for headless sign-in
+        onStartDeviceFlow={handleStartDeviceFlow}
+        onPollDeviceFlow={handlePollDeviceFlow}
+        // Disconnect a provider (dev-only) to clear in-memory tokens on the server
+        onDisconnectProvider={handleDisconnectProvider}
+        oauthStatus={oauthStatus}
+        oauthChecking={oauthChecking}
       />
 
       <main className="flex-1 relative flex flex-col overflow-hidden">
