@@ -29,12 +29,7 @@ function ensureConfig(provider, { allowIncomplete = false } = {}) {
 
 export function loadOAuthProviders(
   env = process.env,
-  {
-    baseUrl,
-    redirectBaseUrl,
-    allowIncomplete = false,
-    postAuthRedirect,
-  } = {},
+  { baseUrl, redirectBaseUrl, allowIncomplete = false, postAuthRedirect } = {},
 ) {
   const base = normalizeUrl(baseUrl);
   const redirectBase = normalizeUrl(redirectBaseUrl || base);
@@ -53,7 +48,9 @@ export function loadOAuthProviders(
       clientId:
         env.GEMINI_OAUTH_CLIENT_ID || env.GOOGLE_OAUTH_CLIENT_ID || null,
       clientSecret:
-        env.GEMINI_OAUTH_CLIENT_SECRET || env.GOOGLE_OAUTH_CLIENT_SECRET || null,
+        env.GEMINI_OAUTH_CLIENT_SECRET ||
+        env.GOOGLE_OAUTH_CLIENT_SECRET ||
+        null,
       scopes: parseScopes(env.GEMINI_OAUTH_SCOPES || env.GOOGLE_OAUTH_SCOPES),
       redirectUri:
         env.GEMINI_OAUTH_REDIRECT_URI ||
@@ -75,6 +72,7 @@ export function loadOAuthProviders(
       supportsOAuth: true,
       authorizeUrl: env.OPENAI_OAUTH_AUTHORIZE_URL || null,
       tokenUrl: env.OPENAI_OAUTH_TOKEN_URL || null,
+      deviceUrl: env.OPENAI_OAUTH_DEVICE_URL || null,
       clientId: env.OPENAI_OAUTH_CLIENT_ID || null,
       clientSecret: env.OPENAI_OAUTH_CLIENT_SECRET || null,
       scopes: parseScopes(env.OPENAI_OAUTH_SCOPES),
