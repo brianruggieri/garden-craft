@@ -31,7 +31,7 @@ const GardenBedView: React.FC<GardenBedViewProps> = ({
     switch (bed.shape) {
       case 'circle': return '50%';
       case 'pill': return '9999px';
-      default: return '4px';
+      default: return '8px';
     }
   };
 
@@ -41,8 +41,8 @@ const GardenBedView: React.FC<GardenBedViewProps> = ({
     <div
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       onMouseDown={(e) => !hoveredPlant && onDragStart(e, bed.id)}
-      className={`absolute cursor-move border-4 transition-all duration-200 bed-texture shadow-xl flex items-center justify-center ${
-        isSelected ? 'border-emerald-500 ring-4 ring-emerald-100 z-30' : 'border-[#4e342e]'
+      className={`absolute cursor-move border-4 transition-all duration-300 bed-texture shadow-2xl flex items-center justify-center ${
+        isSelected ? 'border-emerald-500 ring-4 ring-emerald-500/20 z-40 scale-[1.005]' : 'border-[#4e342e]'
       }`}
       style={{
         left: bed.x * GRID_SIZE,
@@ -52,58 +52,72 @@ const GardenBedView: React.FC<GardenBedViewProps> = ({
         borderRadius: getBorderRadius(),
       }}
     >
-      {/* Bed Info Overlay */}
-      <div className="absolute top-2 left-2 flex flex-col items-start gap-1 z-30 pointer-events-none">
+      {/* Bed Label - Stays on top of soil but under tooltips */}
+      <div className="absolute top-3 left-3 flex flex-col items-start gap-1 z-10 pointer-events-none">
         {bed.name && (
-          <div className="bg-emerald-800 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm uppercase tracking-wider">
+          <div className="bg-emerald-900/90 text-white text-[10px] font-black px-2 py-0.5 rounded shadow-lg uppercase tracking-widest border border-white/10">
             {bed.name}
           </div>
         )}
-        <div className="bg-black/80 backdrop-blur-sm text-white text-[8px] font-black px-1.5 py-0.5 rounded-sm tracking-widest uppercase">
+        <div className="bg-black/60 backdrop-blur-sm text-white/80 text-[8px] font-bold px-2 py-0.5 rounded shadow-inner uppercase tracking-widest">
           {bed.width}" × {bed.height}"
         </div>
       </div>
       
-      {/* Condensed Tooltip */}
+      {/* Floating Tooltip - Outside of the overflow container */}
       {hoveredPlant && (
         <div 
-          className={`absolute pointer-events-none z-[100] animate-in fade-in zoom-in-95 duration-200 ${
-            hoveredPlant.x > bed.width / 2 ? 'right-full mr-4' : 'left-full ml-4'
+          className={`absolute pointer-events-none z-[100] animate-in fade-in zoom-in-95 duration-200 drop-shadow-2xl ${
+            hoveredPlant.x > bed.width / 2 ? 'right-full mr-6' : 'left-full ml-6'
           }`}
           style={{
-            top: (hoveredPlant.y / INCHES_PER_GRID) * GRID_SIZE - 20,
-            width: '220px'
+            top: (hoveredPlant.y / INCHES_PER_GRID) * GRID_SIZE - 40,
+            width: '240px'
           }}
         >
-          <div className="bg-slate-900/95 backdrop-blur-lg rounded-xl shadow-2xl border border-white/10 overflow-hidden ring-1 ring-black/20">
-            <div className="p-3 border-b border-white/5 flex items-center gap-2">
-              <span className="text-xl">{hoveredMeta?.icon}</span>
-              <div className="overflow-hidden">
-                <h4 className="text-white font-black text-[11px] truncate uppercase tracking-tight">{hoveredPlant.varietyName}</h4>
-                <p className="text-emerald-400 text-[8px] font-black opacity-80 uppercase">{hoveredPlant.veggieType}</p>
+          <div className="bg-slate-900 border border-white/10 rounded-2xl overflow-hidden shadow-[0_30px_60px_-12px_rgba(0,0,0,0.5)]">
+            <div className="p-4 bg-gradient-to-br from-slate-800 to-slate-900 border-b border-white/5 flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-3xl shadow-inner">
+                {hoveredMeta?.icon}
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-white font-black text-xs truncate uppercase tracking-tight">{hoveredPlant.varietyName}</h4>
+                <p className="text-emerald-400 text-[9px] font-black uppercase tracking-wider">{hoveredPlant.veggieType}</p>
               </div>
             </div>
             
-            <div className="p-3 space-y-2">
-              <div className="flex gap-2">
-                <div className="flex-1 bg-white/5 p-1.5 rounded-md text-center">
-                  <span className="block text-[6px] text-white/40 font-black uppercase">Ht</span>
-                  <span className="text-white font-black text-[10px]">{hoveredMeta?.height}"</span>
+            <div className="p-4 space-y-4">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-white/5 p-2 rounded-lg border border-white/5">
+                  <span className="block text-[7px] text-white/40 font-black uppercase mb-0.5">Height</span>
+                  <span className="text-white font-black text-xs">{hoveredMeta?.height}"</span>
                 </div>
-                <div className="flex-1 bg-white/5 p-1.5 rounded-md text-center">
-                  <span className="block text-[6px] text-white/40 font-black uppercase">Spr</span>
-                  <span className="text-white font-black text-[10px]">{hoveredPlant.size || hoveredMeta?.spacing}"</span>
+                <div className="bg-white/5 p-2 rounded-lg border border-white/5">
+                  <span className="block text-[7px] text-white/40 font-black uppercase">Spread</span>
+                  <span className="text-white font-black text-xs">{hoveredPlant.size || hoveredMeta?.spacing}"</span>
                 </div>
               </div>
-              <p className="text-[9px] leading-tight text-white/70 italic line-clamp-2">
-                {hoveredPlant.placementReasoning}
-              </p>
+
+              <div className="space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <div className="mt-1 w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] shrink-0" />
+                  <p className="text-[10px] leading-snug text-slate-300 font-medium">{hoveredPlant.placementReasoning}</p>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <div className="mt-1 w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.5)] shrink-0" />
+                  <p className="text-[10px] leading-snug text-slate-400 font-medium italic">{hoveredPlant.companionInsights}</p>
+                </div>
+              </div>
             </div>
           </div>
+          {/* Arrow pointing to plant */}
+          <div className={`absolute top-12 w-3 h-3 bg-slate-900 border-white/10 rotate-45 z-[-1] ${
+            hoveredPlant.x > bed.width / 2 ? '-right-1.5 border-r border-t' : '-left-1.5 border-l border-b'
+          }`} />
         </div>
       )}
       
-      {/* Inner Soil Area (Plants) */}
+      {/* Inner Soil Area (Plants) - We use relative positioning here so tooltips can float above it */}
       <div className="relative w-full h-full overflow-hidden" style={{ borderRadius: 'inherit' }}>
         {layout?.placements.map((plant) => {
           const meta = VEGGIE_METADATA[plant.veggieType];
@@ -114,15 +128,15 @@ const GardenBedView: React.FC<GardenBedViewProps> = ({
           
           const isThisHovered = hoveredPlant?.id === plant.id;
           
-          // Use color highlights instead of text badges to reduce clutter
-          let statusRing = "";
+          // Pure color logic for companions
+          let statusEffect = "";
           if (hoveredPlant && !isThisHovered) {
             if (hoveredMeta?.companions.includes(plant.veggieType)) {
-              statusRing = "ring-4 ring-emerald-400/80 shadow-[0_0_15px_rgba(52,211,153,0.5)] z-40 scale-105";
+              statusEffect = "ring-[6px] ring-emerald-500/60 shadow-[0_0_20px_rgba(16,185,129,0.6)] z-30 scale-110 blur-[0.5px]";
             } else if (hoveredMeta?.antagonists.includes(plant.veggieType)) {
-              statusRing = "ring-4 ring-red-500/90 shadow-[0_0_20px_rgba(239,68,68,0.6)] z-50 scale-110 animate-pulse";
+              statusEffect = "ring-[8px] ring-red-600/80 shadow-[0_0_30px_rgba(220,38,38,0.7)] z-40 scale-115 animate-pulse blur-[1px]";
             } else {
-              statusRing = "opacity-40 grayscale-[0.5]";
+              statusEffect = "opacity-20 grayscale scale-90";
             }
           }
 
@@ -131,20 +145,22 @@ const GardenBedView: React.FC<GardenBedViewProps> = ({
               key={plant.id}
               onMouseEnter={(e) => handlePlantHover(e, plant)}
               onMouseLeave={() => setHoveredPlant(null)}
-              className={`absolute flex items-center justify-center rounded-full transition-all duration-300 cursor-help ${
-                isThisHovered ? 'z-50 ring-2 ring-white scale-110 shadow-2xl' : 'z-20'
-              } ${statusRing}`}
+              className={`absolute flex items-center justify-center rounded-full transition-all duration-500 cursor-crosshair ${
+                isThisHovered ? 'z-[60] ring-4 ring-white shadow-[0_0_40px_rgba(255,255,255,0.4)] scale-125' : 'z-20'
+              } ${statusEffect}`}
               style={{
                 left: pxX - (displaySizePx / 2),
                 top: pxY - (displaySizePx / 2),
                 width: displaySizePx,
                 height: displaySizePx,
-                backgroundColor: isThisHovered ? meta.color : `${meta.color}CC`,
-                border: isThisHovered ? `2px solid white` : `1px solid rgba(255,255,255,0.2)`,
-                fontSize: `${Math.max(10, displaySizePx * 0.45)}px`,
+                backgroundColor: isThisHovered ? meta.color : `${meta.color}BB`,
+                border: isThisHovered ? `3px solid white` : `1.5px solid rgba(255,255,255,0.3)`,
+                fontSize: `${Math.max(12, displaySizePx * 0.5)}px`,
               }}
             >
-              <span className="drop-shadow-lg">{meta.icon}</span>
+              <span className={`drop-shadow-2xl transition-transform duration-500 ${isThisHovered ? 'scale-110' : ''}`}>
+                {meta.icon}
+              </span>
             </div>
           );
         })}
