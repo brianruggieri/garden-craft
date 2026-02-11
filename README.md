@@ -1,6 +1,6 @@
 # GardenCraft Visual Designer
 
-A playful, consumer‑facing garden planning app that I’m also using as a **portfolio project** to showcase full‑stack initiative and creative UI/UX exploration. GardenCraft blends a tactile canvas with an AI‑assisted optimizer, while keeping credentials server‑side.
+A garden planning app designed as a practical tool for mapping beds, placing plants, and testing layout ideas. GardenCraft blends a tactile canvas with an AI‑assisted optimizer.
 
 ---
 
@@ -196,4 +196,4 @@ Returns available providers and OAuth support.
 
 ## Notes
 
-This repo is a portfolio‑style exploration of product + engineering. It’s intentionally playful and iterative—expect the canvas and AI settings to evolve as I experiment with more spatial, generative, and kinetic UI ideas.
+This repo contains an evolving implementation of a garden‑planning UI and its AI integration layer. Expect ongoing changes to the canvas, provider settings, and related interface wiring as the feature set is expanded.
