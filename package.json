@@ -8,15 +8,18 @@
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server/index.js",
-    "dev:server": "node --watch server/index.js"
+    "dev:server": "node --watch server/index.js",
+    "test": "node --test server/tests/oauthRouter.test.js server/tests/gemini/geminiProvider.test.js server/tests/openai/openaiProvider.test.js server/tests/oauth/loadProviders.test.js server/tests/device/deviceFlow.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.61.0",
     "@google/genai": "^1.40.0",
+    "dotenv": "^17.2.4",
     "express": "^5.1.0",
     "openai": "^5.22.1",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "ajv": "^8.12.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
