@@ -69,10 +69,11 @@ import Ajv from "ajv";
  * https://platform.openai.com/docs/guides/structured-outputs
  */
 const OPENAI_STRUCTURED_OUTPUT_MODELS = [
-  "gpt-4o-mini",
-  "gpt-4o-2024-08-06",
-  "gpt-4o-mini-2024-07-18",
-  "gpt-4o-2024-11-20",
+  "gpt-4o", // Base model name (includes all gpt-4o snapshots)
+  "gpt-4o-mini", // Base model name (includes all gpt-4o-mini snapshots)
+  "gpt-4o-2024-08-06", // Specific snapshot
+  "gpt-4o-mini-2024-07-18", // Specific snapshot
+  "gpt-4o-2024-11-20", // Specific snapshot
   // Add future compatible models here
 ];
 
@@ -82,9 +83,12 @@ const OPENAI_STRUCTURED_OUTPUT_MODELS = [
 export function supportsStructuredOutputs(model = "") {
   if (!model || typeof model !== "string") return false;
   const normalized = model.toLowerCase().trim();
-  return OPENAI_STRUCTURED_OUTPUT_MODELS.some((m) =>
-    normalized.startsWith(m.toLowerCase()),
-  );
+  // Check for exact matches or if the model name starts with a known prefix
+  // This handles both base names (gpt-4o) and snapshots (gpt-4o-2024-08-06)
+  return OPENAI_STRUCTURED_OUTPUT_MODELS.some((m) => {
+    const prefix = m.toLowerCase();
+    return normalized === prefix || normalized.startsWith(prefix + "-");
+  });
 }
 
 /**
