@@ -8,7 +8,31 @@
 //
 // This module provides schema builders tailored to each provider's constraints.
 
-import { VEGGIE_TYPES } from "../veggieMetadata.js";
+import { VEGGIE_TYPES } from "../veggieMetadata";
+
+interface JsonSchemaProperty {
+  type?: string;
+  description?: string;
+  enum?: string[];
+  anyOf?: Array<{ type: string }>;
+  items?: JsonSchemaProperty;
+  properties?: Record<string, JsonSchemaProperty>;
+  required?: string[];
+  additionalProperties?: boolean;
+  minimum?: number;
+  maximum?: number;
+  minItems?: number;
+}
+
+interface JsonSchema {
+  $schema?: string;
+  type: string;
+  description?: string;
+  properties?: Record<string, JsonSchemaProperty>;
+  items?: JsonSchemaProperty;
+  required?: string[];
+  additionalProperties?: boolean;
+}
 
 /**
  * Build OpenAI-compatible JSON Schema with strict requirements.
@@ -21,7 +45,7 @@ import { VEGGIE_TYPES } from "../veggieMetadata.js";
  *
  * Returns an object-root schema: { layouts: [...] }
  */
-export function buildOpenAISchema() {
+export function buildOpenAISchema(): JsonSchema {
   const placementItem = {
     type: "object",
     properties: {
@@ -121,7 +145,7 @@ export function buildOpenAISchema() {
  *
  * Returns an array-root schema for direct compatibility: [...]
  */
-export function buildAnthropicSchema() {
+export function buildAnthropicSchema(): JsonSchema {
   const placementItem = {
     type: "object",
     properties: {
@@ -206,7 +230,7 @@ export function buildAnthropicSchema() {
  *
  * @deprecated Use buildOpenAISchema() or buildAnthropicSchema() explicitly.
  */
-export function buildBedJsonSchema() {
+export function buildBedJsonSchema(): JsonSchema {
   return buildOpenAISchema();
 }
 
@@ -216,7 +240,7 @@ export function buildBedJsonSchema() {
  * @param {string} providerId - Provider identifier ('openai', 'anthropic', 'gemini', 'local')
  * @returns {object} JSON Schema appropriate for the provider
  */
-export function getSchemaForProvider(providerId) {
+export function getSchemaForProvider(providerId?: string): JsonSchema {
   switch (providerId?.toLowerCase()) {
     case "openai":
       return buildOpenAISchema();
