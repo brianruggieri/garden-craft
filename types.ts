@@ -1,25 +1,40 @@
-export enum VeggieType {
-  TOMATO = "Tomato",
-  CARROT = "Carrot",
-  LETTUCE = "Lettuce",
-  PEPPER = "Pepper",
-  KALE = "Kale",
-  CUCUMBER = "Cucumber",
-  ZUCCHINI = "Zucchini",
-  ONION = "Onion",
-  RADISH = "Radish",
-  BASIL = "Basil",
+export type VeggieType = string;
+
+export type PlantId = string;
+export type VarietyId = string;
+
+export interface PlantMeta {
+  id: PlantId;
+  spacing: number;
+  height: number;
+  width: number;
+  rootWidth: number;
+  color: string;
+  icon: string;
+  companions: VeggieType[];
+  antagonists: VeggieType[];
+  habit: string;
+  root: string;
+}
+
+export interface PlantCatalog {
+  plants: Record<VeggieType, PlantMeta>;
+  varieties: SeedVariety[];
 }
 
 export type BedShape = "rectangle" | "pill" | "circle";
 
 export interface SeedVariety {
-  id: string;
+  id: VarietyId;
+  stableId?: VarietyId;
+  plantId?: PlantId;
   name: string;
   type: VeggieType;
   spacing: number;
   height: number;
+  width?: number;
   rootDepth: string;
+  rootWidth?: number;
   habit: string;
   description: string;
   isCustom?: boolean;
