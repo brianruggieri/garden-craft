@@ -33,9 +33,10 @@ A garden planning app designed as a practical tool for mapping beds, placing pla
 
 ---
 
-## Requirements
+## Prerequisites
 
-- Node.js 18+
+- Node.js v22 LTS (Active LTS through April 2027)
+- npm v10+ (included with Node v22)
 
 ---
 
