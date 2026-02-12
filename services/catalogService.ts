@@ -1,4 +1,4 @@
-import { PlantCatalog } from "../types";
+import { PlantCatalog } from "../shared/types";
 
 const DEFAULT_SERVER_URL =
   (typeof window !== "undefined" &&

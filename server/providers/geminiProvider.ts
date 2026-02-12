@@ -1,12 +1,18 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { buildGardenPrompt } from "./prompt.js";
-import { VEGGIE_TYPES } from "../veggieMetadata.js";
-import { buildOpenAISchema } from "./bedSchema.js";
-import { runProviderRequest } from "./providerUtils.js";
+import { GoogleGenAI, type Type } from "@google/genai";
+import { buildGardenPrompt } from "./prompt";
+import { VEGGIE_TYPES } from "../veggieMetadata";
+import { buildOpenAISchema } from "./bedSchema";
+import { runProviderRequest } from "./providerUtils";
+import type { GardenBed, Vegetable } from "../../shared/types";
 
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash-001";
 
-function resolveApiKey(auth = {}) {
+interface AuthConfig {
+  apiKey?: string;
+  oauthAccessToken?: string;
+}
+
+function resolveApiKey(auth: AuthConfig = {}): string | null {
   return (
     auth.apiKey ||
     auth.oauthAccessToken ||
@@ -21,7 +27,7 @@ function resolveApiKey(auth = {}) {
  * Tests may override `geminiProvider.createClient` at runtime; generateLayout
  * will prefer the provider-level override when present.
  */
-export let createClient = (auth = {}) => {
+export let createClient = (auth: AuthConfig = {}): GoogleGenAI => {
   const apiKey = resolveApiKey(auth);
   if (!apiKey) {
     throw new Error(
@@ -35,7 +41,15 @@ export let createClient = (auth = {}) => {
  * Keep the original buildGeminiSchema for compatibility with tests that expect
  * the provider to expose the provider-specific schema shape (Type.*).
  */
-function buildGeminiSchema() {
+function buildGeminiSchema(): any {
+  // Using any here because @google/genai Type is a const enum
+  const Type = {
+    OBJECT: "object",
+    ARRAY: "array",
+    STRING: "string",
+    NUMBER: "number",
+  } as any;
+
   return {
     type: Type.OBJECT,
     properties: {
@@ -88,7 +102,30 @@ function buildGeminiSchema() {
  */
 export { buildGeminiSchema };
 
-export const geminiProvider = {
+interface GenerateLayoutOptions {
+  beds: GardenBed[];
+  seeds: Vegetable[];
+  sunOrientation: string;
+  style?: Record<string, any>;
+  optimizationGoals?: string[];
+  auth?: AuthConfig;
+  model?: string;
+  customPrompt?: {
+    system: string;
+    prompt: string;
+    schema?: Record<string, any>;
+  };
+}
+
+export interface GeminiProvider {
+  id: string;
+  name: string;
+  supportsOAuth: boolean;
+  createClient?: (auth: AuthConfig) => GoogleGenAI;
+  generateLayout(options: GenerateLayoutOptions): Promise<any>;
+}
+
+export const geminiProvider: GeminiProvider = {
   id: "gemini",
   name: "Google Gemini",
   supportsOAuth: true,
@@ -136,7 +173,10 @@ export const geminiProvider = {
     });
 
     // For Gemini we need a schemaInserter that maps our base opts into the GoogleGenAI API shape.
-    const schemaInserter = (baseOpts, providedSchema) => {
+    const schemaInserter = (
+      baseOpts: Record<string, any>,
+      providedSchema: Record<string, any> | null,
+    ) => {
       return {
         ...baseOpts,
         config: providedSchema
@@ -149,10 +189,11 @@ export const geminiProvider = {
     };
 
     // invoke maps to the actual SDK call
-    const invoke = (aiClient, opts) => aiClient.models.generateContent(opts);
+    const invoke = (aiClient: GoogleGenAI, opts: any) =>
+      aiClient.models.generateContent(opts);
 
     // response extractor for Gemini is simply `text`
-    const extractResponseText = (resp) => resp?.text ?? "";
+    const extractResponseText = (resp: any) => resp?.text ?? "";
 
     // Delegate parsing + validation to the shared helper to keep the provider small and consistent.
     return runProviderRequest({

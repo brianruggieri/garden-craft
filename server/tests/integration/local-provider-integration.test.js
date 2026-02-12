@@ -9,7 +9,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert";
-import localProvider from "../../providers/localProvider.js";
+import localProvider from "../../providers/localProvider";
 
 test("Local Provider - Basic layout generation", async (t) => {
   const beds = [

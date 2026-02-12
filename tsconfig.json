@@ -19,6 +19,6 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
   },
-  "include": ["**/*.ts", "**/*.tsx", "shared/**/*", "server/**/*"],
+  "include": ["shared/**/*", "server/**/*"],
   "exclude": ["node_modules", "dist", "server/tests/**/*"],
 }

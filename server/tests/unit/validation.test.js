@@ -4,7 +4,7 @@
 
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
-import { validateOptimizeRequest } from "../../middleware/validation.js";
+import { validateOptimizeRequest } from "../../middleware/validation";
 
 describe("Validation Middleware", () => {
   describe("validateOptimizeRequest", () => {
@@ -116,11 +116,7 @@ describe("Validation Middleware", () => {
       };
 
       const valid = validateOptimizeRequest(invalidRequest);
-      assert.equal(
-        valid,
-        false,
-        "Bed missing id, width, height should fail",
-      );
+      assert.equal(valid, false, "Bed missing id, width, height should fail");
     });
 
     it("should reject empty beds array", () => {
@@ -183,11 +179,7 @@ describe("Validation Middleware", () => {
       };
 
       const valid = validateOptimizeRequest(validRequest);
-      assert.equal(
-        valid,
-        true,
-        "Beds with extra properties should be allowed",
-      );
+      assert.equal(valid, true, "Beds with extra properties should be allowed");
     });
 
     it("should accept seeds with additional properties", () => {

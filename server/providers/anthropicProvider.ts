@@ -1,12 +1,18 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { buildGardenPrompt } from "./prompt.js";
-import { buildAnthropicSchema } from "./bedSchema.js";
-import { runProviderRequest } from "./providerUtils.js";
+import { buildGardenPrompt } from "./prompt";
+import { buildAnthropicSchema } from "./bedSchema";
+import { runProviderRequest } from "./providerUtils";
+import type { GardenBed, Vegetable } from "../../shared/types";
 
 const DEFAULT_MODEL =
   process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929";
 
-function resolveApiKey(auth = {}) {
+interface AuthConfig {
+  apiKey?: string;
+  oauthAccessToken?: string;
+}
+
+function resolveApiKey(auth: AuthConfig = {}): string | null {
   return (
     auth.apiKey ||
     auth.oauthAccessToken ||
@@ -20,7 +26,7 @@ function resolveApiKey(auth = {}) {
  * Tests may override `anthropicProvider.createClient` at runtime; generateLayout
  * will prefer the provider-level override when present.
  */
-export let createClient = (auth = {}) => {
+export let createClient = (auth: AuthConfig = {}): Anthropic => {
   const apiKey = resolveApiKey(auth);
   if (!apiKey) {
     throw new Error(
@@ -35,7 +41,7 @@ export let createClient = (auth = {}) => {
  * This uses buildAnthropicSchema which provides a more flexible array-root schema
  * compatible with Anthropic's structured output capabilities.
  */
-export function buildAnthropicJsonSchema() {
+export function buildAnthropicJsonSchema(): Record<string, any> {
   return buildAnthropicSchema();
 }
 
@@ -45,11 +51,11 @@ export { buildAnthropicJsonSchema as buildAnthropicSchema };
 /**
  * Extract raw text from Anthropic SDK response shape (content blocks).
  */
-const extractAnthropicText = (resp) => {
+const extractAnthropicText = (resp: any): string => {
   if (!resp) return "";
   if (Array.isArray(resp.content)) {
     return resp.content
-      .map((block) => (block && block.type === "text" ? block.text : ""))
+      .map((block: any) => (block && block.type === "text" ? block.text : ""))
       .join("\n")
       .trim();
   }
@@ -69,7 +75,10 @@ const extractAnthropicText = (resp) => {
  *
  * Reference: https://docs.anthropic.com/en/docs/build-with-claude/structured-outputs
  */
-const anthropicSchemaInserter = (baseOpts, schema) => {
+const anthropicSchemaInserter = (
+  baseOpts: Record<string, any>,
+  schema: Record<string, any> | null,
+): Record<string, any> => {
   const opts = { ...baseOpts };
 
   if (schema) {
@@ -101,7 +110,7 @@ const anthropicSchemaInserter = (baseOpts, schema) => {
  *
  * Reference: https://docs.anthropic.com/en/docs/build-with-claude/structured-outputs
  */
-const detectAnthropicRefusalOrIncomplete = (response) => {
+const detectAnthropicRefusalOrIncomplete = (response: any): void => {
   if (!response) return;
 
   // Check for refusal stop reason
@@ -120,10 +129,26 @@ const detectAnthropicRefusalOrIncomplete = (response) => {
   }
 };
 
+interface GenerateLayoutOptions {
+  beds: GardenBed[];
+  seeds: Vegetable[];
+  sunOrientation: string;
+  style?: Record<string, any>;
+  optimizationGoals?: string[];
+  auth?: AuthConfig;
+  model?: string;
+  customPrompt?: {
+    system: string;
+    prompt: string;
+    schema?: Record<string, any>;
+  };
+}
+
 export const anthropicProvider = {
   id: "anthropic",
   name: "Anthropic",
   supportsOAuth: true,
+  createClient: undefined as typeof createClient | undefined,
   async generateLayout({
     beds,
     seeds,
@@ -133,7 +158,7 @@ export const anthropicProvider = {
     auth,
     model,
     customPrompt,
-  }) {
+  }: GenerateLayoutOptions): Promise<any> {
     // Prefer runtime override on provider for tests, otherwise use module-level factory.
     const clientFactory =
       (typeof anthropicProvider !== "undefined" &&
@@ -169,7 +194,8 @@ export const anthropicProvider = {
       createClient: clientFactory,
       auth,
       buildBaseOptions,
-      invoke: (aiClient, opts) => aiClient.messages.create(opts),
+      invoke: (aiClient: Anthropic, opts: Record<string, any>) =>
+        aiClient.messages.create(opts as any),
       extractResponseText: extractAnthropicText,
       schema,
       schemaInserter: anthropicSchemaInserter,

@@ -1,13 +1,14 @@
 import OpenAI from "openai";
-import { buildGardenPrompt } from "./prompt.js";
-import { buildOpenAISchema } from "./bedSchema.js";
+import { buildGardenPrompt } from "./prompt";
+import { buildOpenAISchema } from "./bedSchema";
 import {
   runProviderRequest,
   extractJson as utilExtractJson,
   defaultResponseExtractor,
   openaiSchemaInserter,
   detectOpenAIRefusalOrIncomplete,
-} from "./providerUtils.js";
+} from "./providerUtils";
+import type { GardenBed, Vegetable } from "../../shared/types";
 
 const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 
@@ -17,7 +18,12 @@ const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-4o";
  */
 const USE_SCHEMA = process.env.OPENAI_USE_SCHEMA !== "false";
 
-function resolveApiKey(auth = {}) {
+interface AuthOptions {
+  apiKey?: string;
+  oauthAccessToken?: string;
+}
+
+function resolveApiKey(auth: AuthOptions = {}): string | null {
   return (
     auth.apiKey || auth.oauthAccessToken || process.env.OPENAI_API_KEY || null
   );
@@ -28,7 +34,7 @@ function resolveApiKey(auth = {}) {
  * Tests may override `openaiProvider.createClient` at runtime; generateLayout
  * will use the provider-level function when present (keeps test injection behavior).
  */
-export let createClient = (auth = {}) => {
+export let createClient = (auth: AuthOptions = {}): OpenAI => {
   const apiKey = resolveApiKey(auth);
   if (!apiKey) {
     throw new Error(
@@ -42,11 +48,34 @@ export let createClient = (auth = {}) => {
 export const extractJson = utilExtractJson;
 
 // Export OpenAI-specific schema builder.
-export function buildOpenAiSchema() {
+export function buildOpenAiSchema(): Record<string, any> {
   return buildOpenAISchema();
 }
 
-export const openaiProvider = {
+interface GenerateLayoutOptions {
+  beds: GardenBed[];
+  seeds: Vegetable[];
+  sunOrientation: string;
+  style?: Record<string, any>;
+  optimizationGoals?: string[];
+  auth?: AuthOptions;
+  model?: string;
+  customPrompt?: {
+    system: string;
+    prompt: string;
+    schema?: Record<string, any>;
+  };
+}
+
+export interface Provider {
+  id: string;
+  name: string;
+  supportsOAuth: boolean;
+  generateLayout: (options: GenerateLayoutOptions) => Promise<any>;
+  createClient?: (auth: AuthOptions) => OpenAI;
+}
+
+export const openaiProvider: Provider = {
   id: "openai",
   name: "OpenAI",
   supportsOAuth: true,
@@ -59,7 +88,7 @@ export const openaiProvider = {
     auth,
     model,
     customPrompt,
-  }) {
+  }: GenerateLayoutOptions): Promise<any> {
     // Maintain test-friendly override semantics: prefer a runtime property on the provider
     // object if present, otherwise fall back to the module-level createClient.
     const clientFactory =
@@ -91,7 +120,7 @@ export const openaiProvider = {
           { role: "user", content: prompt },
         ],
       }),
-      invoke: (client, opts) => client.chat.completions.create(opts),
+      invoke: (client, opts) => client.chat.completions.create(opts as any),
       extractResponseText: defaultResponseExtractor,
       schema: customSchema || buildOpenAiSchema(),
       schemaInserter: openaiSchemaInserter,

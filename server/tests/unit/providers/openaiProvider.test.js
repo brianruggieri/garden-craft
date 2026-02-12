@@ -4,7 +4,7 @@ import {
   openaiProvider,
   extractJson,
   buildOpenAiSchema,
-} from "../../../providers/openaiProvider.js";
+} from "../../../providers/openaiProvider";
 
 /**
  * Unit tests for the OpenAI provider.

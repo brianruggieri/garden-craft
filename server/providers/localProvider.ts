@@ -14,17 +14,78 @@
  * - 50-65% packing density
  */
 
-import { ForceDirectedGardenPacker } from '../packer/ForceDirectedGardenPacker.js';
-import { VEGGIE_METADATA } from '../veggieMetadata.js';
+import { ForceDirectedGardenPacker } from "../packer/ForceDirectedGardenPacker";
+import { VEGGIE_METADATA } from "../veggieMetadata";
+import type { GardenBed, Vegetable, VeggieType } from "../../shared/types";
+
+interface PlantRequest {
+  veggieType: VeggieType;
+  varietyName: string;
+  count: number;
+  priority: number;
+  priorityWeight: number;
+  reasoning: string;
+}
+
+interface BedPlan {
+  bedId: string;
+  plants: PlantRequest[];
+  strategy: string;
+}
+
+interface SemanticPlan {
+  beds: BedPlan[];
+  overallReasoning: string;
+}
+
+interface PackerPlant {
+  veggieType: VeggieType;
+  varietyName: string;
+  size: number;
+  count: number;
+  priority: number;
+  reasoning: string;
+}
+
+interface PackerInput {
+  bedId: string;
+  plants: PackerPlant[];
+  strategy: string;
+}
+
+interface PackerConfig {
+  intra_group_attraction?: number;
+  inter_group_repulsion?: number;
+  collision_strength?: number;
+  boundary_force?: number;
+  cluster_padding?: number;
+  min_spacing?: number;
+  max_iterations?: number;
+  convergence_threshold?: number;
+  damping?: number;
+  random_seed?: number;
+}
+
+interface GenerateLayoutOptions {
+  beds: GardenBed[];
+  seeds: Vegetable[];
+  sunOrientation: string;
+  config?: PackerConfig;
+}
 
 /**
  * Generate semantic plan locally (without LLM)
  * Priority determines the RATIO of plant types - the packer determines total count
  */
-function generateLocalSemanticPlan({ beds, seeds, sunOrientation }) {
-  const plan = {
+function generateLocalSemanticPlan({
+  beds,
+  seeds,
+  sunOrientation,
+}: GenerateLayoutOptions): SemanticPlan {
+  const plan: SemanticPlan = {
     beds: [],
-    overallReasoning: 'Procedural layout using hierarchical force-directed circle packing with priority-weighted distribution',
+    overallReasoning:
+      "Procedural layout using hierarchical force-directed circle packing with priority-weighted distribution",
   };
 
   for (const bed of beds) {
@@ -32,18 +93,25 @@ function generateLocalSemanticPlan({ beds, seeds, sunOrientation }) {
 
     // Calculate available space and estimate max plants based on realistic packing
     // Use average spacing to estimate capacity - packer will determine actual fit
-    const seedsWithMeta = (seeds || []).map(seed => ({
+    const seedsWithMeta = (seeds || []).map((seed) => ({
       ...seed,
       meta: VEGGIE_METADATA[seed.type] || {},
     }));
 
-    const avgSpacing = seedsWithMeta.reduce((sum, s) => sum + (s.meta.spacing || 12), 0) / seedsWithMeta.length;
-    const estimatedCapacity = Math.floor((bed.width * bed.height) / (avgSpacing * avgSpacing * 0.5)); // 50% packing efficiency
+    const avgSpacing =
+      seedsWithMeta.reduce((sum, s) => sum + (s.meta.spacing || 12), 0) /
+      seedsWithMeta.length;
+    const estimatedCapacity = Math.floor(
+      (bed.width * bed.height) / (avgSpacing * avgSpacing * 0.5),
+    ); // 50% packing efficiency
 
     // Calculate total priority weight
-    const totalPriorityWeight = seedsWithMeta.reduce((sum, seed) => sum + (seed.priority || 1), 0);
+    const totalPriorityWeight = seedsWithMeta.reduce(
+      (sum, seed) => sum + (seed.priority || 1),
+      0,
+    );
 
-    const plants = [];
+    const plants: PlantRequest[] = [];
 
     // Allocate plants proportionally by priority weight
     // Start with generous counts - packer will determine what actually fits
@@ -69,7 +137,9 @@ function generateLocalSemanticPlan({ beds, seeds, sunOrientation }) {
 
       // Apply maximum based on physical spacing constraints
       // This prevents requesting impossibly many large plants
-      const maxBySpacing = Math.floor((bed.width * bed.height) / (spacing * spacing * 0.4)); // 40% packing for safety
+      const maxBySpacing = Math.floor(
+        (bed.width * bed.height) / (spacing * spacing * 0.4),
+      ); // 40% packing for safety
       count = Math.min(count, maxBySpacing);
 
       const varietyName =
@@ -86,9 +156,10 @@ function generateLocalSemanticPlan({ beds, seeds, sunOrientation }) {
       });
     }
 
-    const strategy = plants.length > 0
-      ? `Priority-weighted distribution: packer will determine optimal count for ${plants.length} plant types`
-      : 'Empty bed';
+    const strategy =
+      plants.length > 0
+        ? `Priority-weighted distribution: packer will determine optimal count for ${plants.length} plant types`
+        : "Empty bed";
 
     plan.beds.push({
       bedId: bed.id,
@@ -103,11 +174,11 @@ function generateLocalSemanticPlan({ beds, seeds, sunOrientation }) {
 /**
  * Convert semantic plan to packer input format
  */
-function convertPlanToPackerFormat(semanticPlan) {
-  const packerInput = [];
+function convertPlanToPackerFormat(semanticPlan: SemanticPlan): PackerInput[] {
+  const packerInput: PackerInput[] = [];
 
   for (const bedPlan of semanticPlan.beds) {
-    const plantList = bedPlan.plants.map((plant) => {
+    const plantList: PackerPlant[] = bedPlan.plants.map((plant) => {
       const meta = VEGGIE_METADATA[plant.veggieType] || {};
 
       return {
@@ -133,21 +204,35 @@ function convertPlanToPackerFormat(semanticPlan) {
 /**
  * Generate garden layout using hierarchical force-directed packer
  */
-async function generateProceduralLayout({ beds, seeds, sunOrientation, config = {} }) {
-  console.log('[LocalProvider] Generating procedural layout with hierarchical packer...');
+async function generateProceduralLayout({
+  beds,
+  seeds,
+  sunOrientation,
+  config = {},
+}: GenerateLayoutOptions): Promise<any[]> {
+  console.log(
+    "[LocalProvider] Generating procedural layout with hierarchical packer...",
+  );
 
   // Phase 1: Generate semantic plan (locally, no LLM)
-  const semanticPlan = generateLocalSemanticPlan({ beds, seeds, sunOrientation });
+  const semanticPlan = generateLocalSemanticPlan({
+    beds,
+    seeds,
+    sunOrientation,
+    config,
+  });
 
   const totalPlants = semanticPlan.beds.reduce(
     (sum, b) => sum + b.plants.reduce((s, p) => s + p.count, 0),
-    0
+    0,
   );
 
-  console.log(`[LocalProvider] Plan generated: ${totalPlants} total plants across ${beds.length} bed(s)`);
+  console.log(
+    `[LocalProvider] Plan generated: ${totalPlants} total plants across ${beds.length} bed(s)`,
+  );
 
   // Phase 2: Use hierarchical force-directed packer for spatial optimization
-  const layouts = [];
+  const layouts: any[] = [];
 
   for (const bedPlan of semanticPlan.beds) {
     const bed = beds.find((b) => b.id === bedPlan.bedId);
@@ -166,11 +251,11 @@ async function generateProceduralLayout({ beds, seeds, sunOrientation, config = 
     }
 
     console.log(
-      `[LocalProvider] Packing ${bedPlan.plants.length} plant types into bed ${bed.name || bed.id}...`
+      `[LocalProvider] Packing ${bedPlan.plants.length} plant types into bed ${bed.name || bed.id}...`,
     );
 
     // Configure force-directed packer with stronger collision settings
-    const packerConfig = {
+    const packerConfig: PackerConfig = {
       intra_group_attraction: config.intra_group_attraction ?? 0.3,
       inter_group_repulsion: config.inter_group_repulsion ?? 0.2,
       collision_strength: config.collision_strength ?? 0.95, // Increased from 0.8
@@ -184,44 +269,58 @@ async function generateProceduralLayout({ beds, seeds, sunOrientation, config = 
     };
 
     const packer = new ForceDirectedGardenPacker(bed, {
-      sunOrientation: sunOrientation || 'South',
+      sunOrientation: sunOrientation || "South",
       ...packerConfig,
     });
 
-    // Convert semantic plan to packer format
+    // Convert semantic plan to packer format (include overallReasoning for typing)
     const packerInput = convertPlanToPackerFormat({
       beds: [bedPlan],
+      overallReasoning: semanticPlan.overallReasoning,
     });
 
     // Pack plants using hierarchical force-directed algorithm
-    const result = packer.packPlants(packerInput[0].plants);
+    const result = packer.packPlants(packerInput[0].plants) as {
+      placements: any[];
+      stats: any;
+      clusters: any;
+      violations: any;
+      failedPlants?: any[];
+    };
 
     console.log(
-      `[LocalProvider] Placed ${result.stats.placed}/${result.stats.requested} plants (${result.stats.fillRate} fill rate, ${result.stats.converged ? 'converged' : 'max iterations'})`
+      `[LocalProvider] Placed ${result.stats.placed}/${result.stats.requested} plants (${result.stats.fillRate} fill rate, ${result.stats.converged ? "converged" : "max iterations"})`,
     );
     console.log(
-      `[LocalProvider] Packing density: ${result.stats.packingDensity}, clusters: ${result.stats.clusters}`
+      `[LocalProvider] Packing density: ${result.stats.packingDensity}, clusters: ${result.stats.clusters}`,
     );
 
     // Log priority-based distribution results
-    if (result.stats.plantTypeCounts && result.stats.plantTypeCounts.length > 0) {
-      console.log('[LocalProvider] Priority-weighted distribution:');
-      result.stats.plantTypeCounts.forEach(({ type, requested, actual, ratio }) => {
-        const percentage = (ratio * 100).toFixed(1);
-        const status = ratio >= 0.8 ? '✓' : ratio >= 0.5 ? '~' : '⚠';
-        console.log(`[LocalProvider]   ${status} ${type}: ${actual}/${requested} (${percentage}%)`);
-      });
+    if (
+      result.stats.plantTypeCounts &&
+      result.stats.plantTypeCounts.length > 0
+    ) {
+      console.log("[LocalProvider] Priority-weighted distribution:");
+      result.stats.plantTypeCounts.forEach(
+        ({ type, requested, actual, ratio }: any) => {
+          const percentage = (ratio * 100).toFixed(1);
+          const status = ratio >= 0.8 ? "✓" : ratio >= 0.5 ? "~" : "⚠";
+          console.log(
+            `[LocalProvider]   ${status} ${type}: ${actual}/${requested} (${percentage}%)`,
+          );
+        },
+      );
     }
 
     if (result.violations.bounds.length > 0) {
       console.warn(
-        `[LocalProvider] ${result.violations.bounds.length} bounds violations detected`
+        `[LocalProvider] ${result.violations.bounds.length} bounds violations detected`,
       );
     }
 
     if (result.violations.collisions.length > 0) {
       console.warn(
-        `[LocalProvider] ${result.violations.collisions.length} minor collisions detected (${((result.violations.collisions.length / result.stats.placed) * 100).toFixed(1)}%)`
+        `[LocalProvider] ${result.violations.collisions.length} minor collisions detected (${((result.violations.collisions.length / result.stats.placed) * 100).toFixed(1)}%)`,
       );
     }
 
@@ -242,21 +341,22 @@ async function generateProceduralLayout({ beds, seeds, sunOrientation, config = 
  * Local provider configuration
  */
 export const localProvider = {
-  id: 'local',
-  name: 'Local Procedural (Hierarchical Packer)',
+  id: "local",
+  name: "Local Procedural (Hierarchical Packer)",
   supportsOAuth: false,
 
   /**
    * Generate layout using hierarchical force-directed circle packing
    *
-   * @param {Object} options - Layout generation options
-   * @param {Array} options.beds - Garden bed specifications
-   * @param {Array} options.seeds - Selected plant seeds with priorities
-   * @param {string} options.sunOrientation - Sun direction (North/South/East/West)
-   * @param {Object} options.config - Force-directed packer configuration (optional)
-   * @returns {Promise<Array>} - Array of bed layouts with placements
+   * @param options - Layout generation options
+   * @returns Array of bed layouts with placements
    */
-  async generateLayout({ beds, seeds, sunOrientation, config }) {
+  async generateLayout({
+    beds,
+    seeds,
+    sunOrientation,
+    config,
+  }: GenerateLayoutOptions): Promise<any[]> {
     return generateProceduralLayout({ beds, seeds, sunOrientation, config });
   },
 };

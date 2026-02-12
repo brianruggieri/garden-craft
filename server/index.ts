@@ -1,8 +1,12 @@
 import { config } from "dotenv";
 import express from "express";
-import { getProvider, listProviders } from "./providers/index";
-import { createOAuthRouter } from "./oauth/index";
-import { loadOAuthProviders } from "./oauth/providers";
+import * as Providers from "./providers/index";
+import * as OAuthIndex from "./oauth/index";
+import * as OAuthProviders from "./oauth/providers";
+
+const listProviders = (Providers as any).listProviders;
+const createOAuthRouter = (OAuthIndex as any).createOAuthRouter;
+const loadOAuthProviders = (OAuthProviders as any).loadOAuthProviders;
 import { createMcpSseRouter } from "./mcp/sseRouter";
 import { getPlantCatalog } from "./plantCatalogRepo";
 import { createOptimizeHandler } from "./routes/optimize";
@@ -63,7 +67,7 @@ const oauthProviders = loadOAuthProviders(process.env, {
  */
 const oauthRouter = createOAuthRouter({
   providers: oauthProviders,
-  onSuccess: async (req, { providerId, token }: any) => {
+  onSuccess: async (req: any, { providerId, token }: any) => {
     const receivedAt = Date.now();
     const expiresInMs =
       typeof token?.expires_in === "number" ? token.expires_in * 1000 : null;
@@ -77,7 +81,7 @@ const oauthRouter = createOAuthRouter({
       expiresAt: expiresInMs ? receivedAt + expiresInMs : null,
     });
   },
-  onError: async (req, err: any) => {
+  onError: async (req: any, err: any) => {
     console.error("OAuth error during provider flow");
   },
 });
@@ -253,7 +257,7 @@ if (enableMcpSse) {
 /**
  * Build discovery object from request
  */
-const buildDiscovery = (req) => {
+const buildDiscovery = (req: any) => {
   const proto = req.get("x-forwarded-proto") || req.protocol;
   const host = req.get("host");
   const hostBase = process.env.BASE_URL || `${proto}://${host}`;

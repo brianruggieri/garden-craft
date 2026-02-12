@@ -18,8 +18,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert";
-import { HierarchicalCirclePacker } from "../../../packer/HierarchicalCirclePacker.js";
-import { ForceDirectedGardenPacker } from "../../../packer/ForceDirectedGardenPacker.js";
+import { HierarchicalCirclePacker } from "../../../packer/HierarchicalCirclePacker";
+import { ForceDirectedGardenPacker } from "../../../packer/ForceDirectedGardenPacker";
 
 // ============================================================================
 // TEST SUITE 1: HierarchicalCirclePacker Core Functionality

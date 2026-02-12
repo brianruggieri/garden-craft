@@ -1,4 +1,5 @@
-import { VEGGIE_METADATA, VEGGIE_TYPES } from "../veggieMetadata.js";
+import { VEGGIE_METADATA, VEGGIE_TYPES } from "../veggieMetadata";
+import type { GardenBed, Vegetable, VeggieType } from "../../shared/types";
 
 const DEFAULT_SYSTEM = [
   "You are an expert horticultural planner and spatial designer.",
@@ -7,14 +8,25 @@ const DEFAULT_SYSTEM = [
   "Respect bed bounds and avoid overlaps.",
 ].join(" ");
 
-function normalizeVariety(veg) {
+interface NormalizedVariety {
+  veggieType: VeggieType;
+  varietyName: string;
+  priority: number;
+  spacing: number;
+  height: number;
+  habit: string;
+  root: string;
+  desc: string;
+}
+
+function normalizeVariety(veg: Vegetable): NormalizedVariety[] {
   const meta = VEGGIE_METADATA[veg.type] || {};
   if (
     Array.isArray(veg.selectedVarieties) &&
     veg.selectedVarieties.length > 0
   ) {
     return veg.selectedVarieties.map((sv) => ({
-      veggieType: sv.type || veg.type,
+      veggieType: (sv.type || veg.type) as VeggieType,
       varietyName: sv.name,
       priority: veg.priority ?? 1,
       spacing: sv.spacing ?? meta.spacing,
@@ -38,6 +50,42 @@ function normalizeVariety(veg) {
   ];
 }
 
+interface BedRecipe {
+  bedId: string;
+  bedName?: string;
+  dimensions: string;
+  sqft: string;
+  targetPlants: string;
+  recipe: {
+    veggieType: VeggieType;
+    varietyName: string;
+    spacing: number;
+    minCount: number;
+    maxCount: number;
+    priority: number;
+  }[];
+}
+
+interface GuildEntry {
+  type: VeggieType;
+  likes: string[];
+  dislikes: string[];
+}
+
+interface GardenPromptOptions {
+  beds: GardenBed[];
+  seeds: Vegetable[];
+  sunOrientation: string;
+  style?: Record<string, any>;
+  optimizationGoals?: string[];
+}
+
+interface GardenPromptResult {
+  system: string;
+  prompt: string;
+  schema?: Record<string, any>;
+}
+
 export function buildGardenPrompt({
   beds,
   seeds,
@@ -50,13 +98,15 @@ export function buildGardenPrompt({
     "Respect companion relationships (likes) and separate antagonists (dislikes)",
     "Fill every available space with appropriate plant varieties",
   ],
-}) {
+}: GardenPromptOptions): GardenPromptResult {
   const varieties = (seeds || []).flatMap(normalizeVariety);
-  const guild = Object.entries(VEGGIE_METADATA).map(([type, meta]) => ({
-    type,
-    likes: meta.companions,
-    dislikes: meta.antagonists,
-  }));
+  const guild: GuildEntry[] = Object.entries(VEGGIE_METADATA).map(
+    ([type, meta]) => ({
+      type: type as VeggieType,
+      likes: meta.companions,
+      dislikes: meta.antagonists,
+    }),
+  );
 
   const system = DEFAULT_SYSTEM;
 
@@ -64,7 +114,7 @@ export function buildGardenPrompt({
   const totalPriority = varieties.reduce((sum, v) => sum + v.priority, 0);
 
   // Build per-bed density targets and variety recipes
-  const bedRecipes = beds.map((bed) => {
+  const bedRecipes: BedRecipe[] = beds.map((bed) => {
     const sqft = (bed.width * bed.height) / 144; // Convert sq inches to sq feet
     // Target: 2.5-3 plants per square foot for intensive gardening
     const targetMin = Math.ceil(sqft * 2.5);
@@ -106,7 +156,7 @@ export function buildGardenPrompt({
           ? "West"
           : "East";
 
-  const payload = {
+  const payload: GardenPromptResult = {
     system,
     prompt: [
       "You are an expert Horticultural Planner using Intensive Square Foot Gardening and Intercropping.",

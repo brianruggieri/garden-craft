@@ -10,7 +10,7 @@ import {
   AIProviderId,
   PlantCatalog,
   PlantMeta,
-} from "./types";
+} from "./shared/types";
 import ControlPanel from "./components/ControlPanel";
 import GardenBedView from "./components/GardenBedView";
 import { generateGardenLayout } from "./services/geminiService";
@@ -664,7 +664,6 @@ const App: React.FC = () => {
                 onClick={() => setSelectedBedId(bed.id)}
               />
             ))}
-
           </div>
 
           <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white p-2.5 rounded-2xl shadow-2xl border-2 border-slate-300 z-40">

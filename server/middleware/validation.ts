@@ -66,7 +66,7 @@ const optimizeRequestSchema = {
     },
     sunOrientation: {
       type: "string",
-      enum: ["north", "south", "east", "west"],
+      enum: ["North", "South", "East", "West"],
       description: "Primary sun direction for the garden",
     },
     style: {
@@ -111,9 +111,11 @@ export function createValidationMiddleware(validator: ValidateFunction) {
     const valid = validator(req.body);
 
     if (!valid) {
-      const errors = validator.errors.map((err) => {
-        const path = err.instancePath || "body";
-        const message = err.message || "validation failed";
+      // validator.errors can be null/undefined - guard before mapping
+      const rawErrors = validator.errors ?? [];
+      const errors = (rawErrors as any[]).map((err) => {
+        const path = err?.instancePath || "body";
+        const message = err?.message || "validation failed";
         return `${path}: ${message}`;
       });
 

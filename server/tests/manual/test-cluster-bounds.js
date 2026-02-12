@@ -2,7 +2,7 @@
  * Simple test to verify cluster initial placement respects bounds
  */
 
-import { HierarchicalCirclePacker } from "../../packer/HierarchicalCirclePacker.js";
+import { HierarchicalCirclePacker } from "../../packer/HierarchicalCirclePacker";
 
 console.log("=".repeat(80));
 console.log("CLUSTER BOUNDS TEST");

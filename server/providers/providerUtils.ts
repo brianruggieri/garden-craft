@@ -1,5 +1,5 @@
 /**
- * server/providers/providerUtils.js
+ * server/providers/providerUtils.ts
  *
  * Shared provider helper utilities to centralize request/validation logic for LLM adapters.
  *
@@ -61,7 +61,7 @@
  *
  */
 
-import Ajv from "ajv";
+import Ajv, { type Options as AjvOptions, type ValidateFunction } from "ajv";
 
 /**
  * OpenAI models that support Structured Outputs (strict schema mode).
@@ -80,7 +80,7 @@ const OPENAI_STRUCTURED_OUTPUT_MODELS = [
 /**
  * Check if a given OpenAI model supports Structured Outputs.
  */
-export function supportsStructuredOutputs(model = "") {
+export function supportsStructuredOutputs(model: string = ""): boolean {
   if (!model || typeof model !== "string") return false;
   const normalized = model.toLowerCase().trim();
   // Check for exact matches or if the model name starts with a known prefix
@@ -100,7 +100,10 @@ export function supportsStructuredOutputs(model = "") {
  *   if schema is provided and model supports Structured Outputs
  * - `response_format: { type: "json_object" }` otherwise (JSON mode fallback)
  */
-export function openaiSchemaInserter(baseOpts = {}, schema = null) {
+export function openaiSchemaInserter(
+  baseOpts: Record<string, any> = {},
+  schema: Record<string, any> | null = null
+): Record<string, any> {
   const clone = { ...baseOpts };
   const model = baseOpts.model || "";
 
@@ -133,7 +136,7 @@ export function openaiSchemaInserter(baseOpts = {}, schema = null) {
  * - finish_reason === "length" (incomplete/truncated)
  * - response.status === "incomplete" (streaming)
  */
-export function detectOpenAIRefusalOrIncomplete(response) {
+export function detectOpenAIRefusalOrIncomplete(response: any): void {
   if (!response) return;
 
   // Check for refusal in message
@@ -141,7 +144,7 @@ export function detectOpenAIRefusalOrIncomplete(response) {
     const firstChoice = response.choices[0];
     if (firstChoice?.message?.refusal) {
       throw new Error(
-        `OpenAI refused to generate response: ${firstChoice.message.refusal}`,
+        `OpenAI refused to generate response: ${firstChoice.message.refusal}`
       );
     }
 
@@ -149,7 +152,7 @@ export function detectOpenAIRefusalOrIncomplete(response) {
     if (firstChoice?.finish_reason === "length") {
       throw new Error(
         "OpenAI response incomplete: output was truncated due to length limit. " +
-          "Consider increasing max_tokens or simplifying the request.",
+          "Consider increasing max_tokens or simplifying the request."
       );
     }
   }
@@ -157,7 +160,7 @@ export function detectOpenAIRefusalOrIncomplete(response) {
   // Check for incomplete streaming response
   if (response.status === "incomplete") {
     throw new Error(
-      "OpenAI response incomplete: streaming response did not complete successfully.",
+      "OpenAI response incomplete: streaming response did not complete successfully."
     );
   }
 }
@@ -167,7 +170,7 @@ export function detectOpenAIRefusalOrIncomplete(response) {
  * If response is { layouts: [...] }, extract the layouts array.
  * Otherwise return response as-is (assumed to already be an array).
  */
-export function normalizeProviderResponse(parsed) {
+export function normalizeProviderResponse(parsed: any): any {
   // If it's an object with layouts property, extract it
   if (
     parsed &&
@@ -185,7 +188,7 @@ export function normalizeProviderResponse(parsed) {
  * Extract a JSON substring from text that may contain surrounding commentary.
  * Preserves the first outer array or object found (providers may return array or object root).
  */
-export function extractJson(text = "") {
+export function extractJson(text: string = ""): string {
   if (typeof text !== "string") {
     text = String(text || "");
   }
@@ -210,7 +213,7 @@ export function extractJson(text = "") {
  * Providers with custom response shapes (e.g. Anthropic content blocks) should pass
  * their own extractor.
  */
-export function defaultResponseExtractor(response) {
+export function defaultResponseExtractor(response: any): string {
   if (!response) return "";
   // OpenAI-style
   if (response.choices && Array.isArray(response.choices)) {
@@ -224,7 +227,7 @@ export function defaultResponseExtractor(response) {
   if (Array.isArray(response.content)) {
     // Join text blocks if present
     return response.content
-      .map((block) => (block && block.type === "text" ? block.text : ""))
+      .map((block: any) => (block && block.type === "text" ? block.text : ""))
       .join("\n")
       .trim();
   }
@@ -246,7 +249,10 @@ export function defaultResponseExtractor(response) {
  * Providers with bespoke SDKs can pass their own `schemaInserter(baseOpts, schema)` function
  * that returns an options object compatible with their SDK.
  */
-export function defaultSchemaInserter(baseOpts = {}, schema = null) {
+export function defaultSchemaInserter(
+  baseOpts: Record<string, any> = {},
+  schema: Record<string, any> | null = null
+): Record<string, any> {
   const clone = { ...baseOpts };
   if (schema) {
     clone.response_format = { type: "json_schema", json_schema: schema };
@@ -254,6 +260,35 @@ export function defaultSchemaInserter(baseOpts = {}, schema = null) {
     clone.response_format = { type: "json_object" };
   }
   return clone;
+}
+
+export type ResponseExtractorFn = (response: any) => string;
+export type SchemaInserterFn = (
+  baseOpts: Record<string, any>,
+  schema: Record<string, any> | null
+) => Record<string, any>;
+export type RefusalDetectorFn = (response: any) => void;
+export type InvokeFn<TClient = any> = (
+  client: TClient,
+  opts: Record<string, any>
+) => Promise<any>;
+export type CreateClientFn<TAuth = any, TClient = any> = (
+  auth: TAuth
+) => TClient | Promise<TClient>;
+
+export interface RunProviderRequestOptions<TAuth = any, TClient = any> {
+  createClient?: CreateClientFn<TAuth, TClient>;
+  auth?: TAuth;
+  buildBaseOptions: () => Record<string, any>;
+  invoke: InvokeFn<TClient>;
+  extractResponseText?: ResponseExtractorFn;
+  schema?: Record<string, any> | null;
+  schemaInserter?: SchemaInserterFn;
+  useSchema?: boolean;
+  ajvOptions?: AjvOptions;
+  detectRefusalOrIncomplete?: RefusalDetectorFn | null;
+  normalizeResponse?: boolean;
+  clientInstance?: TClient;
 }
 
 /**
@@ -274,7 +309,7 @@ export function defaultSchemaInserter(baseOpts = {}, schema = null) {
  *
  * Throws on parse errors or schema validation failures.
  */
-export async function runProviderRequest({
+export async function runProviderRequest<TAuth = any, TClient = any>({
   createClient,
   auth,
   buildBaseOptions,
@@ -286,13 +321,11 @@ export async function runProviderRequest({
   ajvOptions = { allErrors: true, strict: false },
   detectRefusalOrIncomplete = null,
   normalizeResponse = true,
-  // If you want to allow providers to supply an already-instantiated client, either make
-  // createClient be a function that returns the client, or pass clientInstance and createClient=null.
   clientInstance = undefined,
-}) {
+}: RunProviderRequestOptions<TAuth, TClient>): Promise<any> {
   if (!createClient && !clientInstance) {
     throw new Error(
-      "runProviderRequest requires createClient or clientInstance",
+      "runProviderRequest requires createClient or clientInstance"
     );
   }
   if (typeof buildBaseOptions !== "function") {
@@ -300,24 +333,24 @@ export async function runProviderRequest({
   }
   if (typeof invoke !== "function") {
     throw new Error(
-      "runProviderRequest requires invoke(client, opts) function",
+      "runProviderRequest requires invoke(client, opts) function"
     );
   }
 
-  const client = clientInstance ?? (await createClient(auth || {}));
+  const client = clientInstance ?? (await createClient!(auth || ({} as TAuth)));
 
   const baseOpts = buildBaseOptions();
 
   // Prepare AJV validator if schema provided
-  let validate = null;
-  let ajv = null;
+  let validate: ValidateFunction | null = null;
+  let ajv: Ajv | null = null;
   if (schema) {
     ajv = new Ajv(ajvOptions);
     validate = ajv.compile(schema);
   }
 
   // Try to request schema-aware output if requested; fallback to json_object.
-  let response = null;
+  let response: any = null;
   if (useSchema && schema) {
     try {
       const optsWithSchema = schemaInserter(baseOpts, schema);
@@ -346,13 +379,13 @@ export async function runProviderRequest({
 
   // Extract raw text and parse JSON (tolerant extraction)
   const rawText = extractResponseText(response) ?? "";
-  let parsed;
+  let parsed: any;
   try {
     parsed = JSON.parse(extractJson(rawText));
-  } catch (err) {
+  } catch (err: any) {
     const safeSnippet = String(rawText).slice(0, 1024);
     throw new Error(
-      `Provider response parse failed: ${err.message} — snippet: ${safeSnippet}`,
+      `Provider response parse failed: ${err.message} — snippet: ${safeSnippet}`
     );
   }
 
@@ -380,6 +413,24 @@ export async function runProviderRequest({
   return parsed;
 }
 
+export interface ProviderAdapterOptions<TAuth = any, TClient = any> {
+  createClient?: CreateClientFn<TAuth, TClient>;
+  invoke: InvokeFn<TClient>;
+  extractResponseText?: ResponseExtractorFn;
+  schemaInserter?: SchemaInserterFn;
+  schemaBuilder?: (() => Record<string, any>) | null;
+  useSchema?: boolean;
+  detectRefusalOrIncomplete?: RefusalDetectorFn | null;
+  normalizeResponse?: boolean;
+}
+
+export interface ProviderAdapterCallOptions<TAuth = any, TClient = any> {
+  auth?: TAuth;
+  buildBaseOptions: () => Record<string, any>;
+  modelOverride?: string;
+  clientInstance?: TClient;
+}
+
 /**
  * Convenience wrapper to create a simple provider adapter function that providers
  * can call. It returns an async function that accepts the same args as the
@@ -399,7 +450,7 @@ export async function runProviderRequest({
  * Then provider.generateLayout can simply:
  * return adapter({ auth, buildBaseOptions: () => ({ model, messages: [...] }) });
  */
-export function createProviderAdapter({
+export function createProviderAdapter<TAuth = any, TClient = any>({
   createClient,
   invoke,
   extractResponseText = defaultResponseExtractor,
@@ -408,10 +459,10 @@ export function createProviderAdapter({
   useSchema = true,
   detectRefusalOrIncomplete = null,
   normalizeResponse = true,
-}) {
+}: ProviderAdapterOptions<TAuth, TClient>) {
   if (!invoke) {
     throw new Error(
-      "createProviderAdapter requires invoke(client, opts) function",
+      "createProviderAdapter requires invoke(client, opts) function"
     );
   }
   return async function providerAdapter({
@@ -419,7 +470,7 @@ export function createProviderAdapter({
     buildBaseOptions,
     modelOverride,
     clientInstance,
-  } = {}) {
+  }: ProviderAdapterCallOptions<TAuth, TClient> = {} as ProviderAdapterCallOptions<TAuth, TClient>): Promise<any> {
     // buildBaseOptions is required here and should produce the SDK-specific base opts.
     if (typeof buildBaseOptions !== "function") {
       throw new Error("providerAdapter requires buildBaseOptions() function");

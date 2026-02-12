@@ -7,7 +7,7 @@
  * 3. Space-filling adds more plants (largest to smallest) until bed is full
  */
 
-import { ForceDirectedGardenPacker } from "../../packer/ForceDirectedGardenPacker.js";
+import { ForceDirectedGardenPacker } from "../../packer/ForceDirectedGardenPacker";
 
 console.log("=".repeat(80));
 console.log("PRIORITY-WEIGHTED DISTRIBUTION WITH SPACE-FILLING TEST");

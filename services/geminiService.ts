@@ -1,4 +1,9 @@
-import { BedLayout, GardenBed, SunOrientation, Vegetable } from "../types";
+import {
+  BedLayout,
+  GardenBed,
+  SunOrientation,
+  Vegetable,
+} from "../shared/types";
 
 type AIProviderId = "gemini" | "openai" | "anthropic" | "local";
 

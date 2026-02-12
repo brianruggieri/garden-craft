@@ -22,26 +22,116 @@
  * @version 2.0.0
  */
 
+export interface HierarchicalOptions {
+  shape?: "rectangle" | "circle" | "pill";
+  intra_group_attraction?: number;
+  inter_group_repulsion?: number;
+  collision_strength?: number;
+  boundary_force?: number;
+  cluster_padding?: number;
+  min_spacing?: number;
+  max_iterations?: number;
+  convergence_threshold?: number;
+  damping?: number;
+  random_seed?: number | null;
+}
+
+export type VeggieType = string;
+
+export interface Plant {
+  id?: string;
+  veggieType?: VeggieType;
+  varietyName?: string;
+  radius: number;
+  priority?: number;
+  meta?: Record<string, any>;
+  [k: string]: any;
+}
+
+export interface PlantGroup {
+  type: VeggieType;
+  plants: Plant[];
+  companions?: VeggieType[];
+  antagonists?: VeggieType[];
+  [k: string]: any;
+}
+
+export interface Cluster {
+  id: string;
+  type: VeggieType;
+  x: number;
+  y: number;
+  radius: number;
+  plants: Plant[];
+  companions: VeggieType[];
+  antagonists: VeggieType[];
+  vx: number;
+  vy: number;
+  fx: number;
+  fy: number;
+  [k: string]: any;
+}
+
+export interface Circle {
+  id: string;
+  clusterId?: string;
+  clusterType?: string;
+  veggieType?: VeggieType;
+  varietyName?: string;
+  x: number;
+  y: number;
+  radius: number;
+  priority?: number;
+  vx: number;
+  vy: number;
+  fx: number;
+  fy: number;
+  meta?: Record<string, any>;
+  originalSpacing?: number;
+  [k: string]: any;
+}
+
+export interface PackResult {
+  placements: any[];
+  stats: Record<string, any>;
+  violations: Record<string, any>;
+  clusters: any[];
+}
+
 export class HierarchicalCirclePacker {
-  /**
-   * @param {number} width - Bed width in inches
-   * @param {number} height - Bed height in inches
-   * @param {Object} config - Configuration parameters
-   * @param {number} config.intra_group_attraction - Attraction force within same type (0-1, default 0.3)
-   * @param {number} config.inter_group_repulsion - Repulsion between different types (0-1, default 0.2)
-   * @param {number} config.collision_strength - Collision resolution force (0-1, default 0.8)
-   * @param {number} config.boundary_force - Containment force at edges (0-1, default 0.5)
-   * @param {number} config.cluster_padding - Minimum space between clusters in inches (default 2)
-   * @param {number} config.min_spacing - Minimum space between individual circles in inches (default 0.5)
-   * @param {number} config.max_iterations - Maximum simulation steps (default 500)
-   * @param {number} config.convergence_threshold - Energy threshold for stopping (default 0.01)
-   * @param {number} config.damping - Velocity damping factor (0-1, default 0.9)
-   * @param {number|null} config.random_seed - Seed for deterministic randomness (default null)
-   */
-  constructor(width, height, options = {}) {
+  width: number;
+  height: number;
+  shape: string;
+
+  intra_group_attraction: number;
+  inter_group_repulsion: number;
+  collision_strength: number;
+  boundary_force: number;
+  cluster_padding: number;
+  min_spacing: number;
+  max_iterations: number;
+  convergence_threshold: number;
+  damping: number;
+
+  random_seed: number | null;
+  _random_state: number;
+
+  clusters: Cluster[];
+  circles: Circle[];
+  iteration_count: number;
+  converged: boolean;
+
+  plantGroups: PlantGroup[] | null;
+  requestedCounts: Record<string, number>;
+
+  constructor(
+    width: number,
+    height: number,
+    options: HierarchicalOptions = {},
+  ) {
     this.width = width;
     this.height = height;
-    this.shape = options.shape || "rectangle"; // Support rectangle, circle, rounded
+    this.shape = options.shape || "rectangle";
 
     // Tunable force parameters
     this.intra_group_attraction = options.intra_group_attraction ?? 0.3;
@@ -52,24 +142,27 @@ export class HierarchicalCirclePacker {
     this.min_spacing = options.min_spacing ?? 0.5;
     this.max_iterations = options.max_iterations ?? 500;
     this.convergence_threshold = options.convergence_threshold ?? 0.01;
-    this.damping = options.damping ?? 0.85; // Lower damping for better collision resolution
+    this.damping = options.damping ?? 0.85;
 
     // Random seed for determinism
     this.random_seed = options.random_seed ?? null;
     this._random_state = this.random_seed ?? Math.random() * 1000000;
 
     // Tracking structures
-    this.clusters = []; // Meta-circles for plant groups
-    this.circles = []; // Individual plant circles
+    this.clusters = [];
+    this.circles = [];
     this.iteration_count = 0;
     this.converged = false;
+
+    this.plantGroups = null;
+    this.requestedCounts = {};
   }
 
   /**
    * Seeded pseudo-random number generator (LCG algorithm)
    * Ensures deterministic layouts when seed is provided
    */
-  random() {
+  random(): number {
     if (this.random_seed === null) {
       return Math.random();
     }
@@ -82,16 +175,10 @@ export class HierarchicalCirclePacker {
   /**
    * Pack plants with hierarchical two-level clustering
    *
-   * @param {Array} plantGroups - Array of plant type groups
-   *   [{
-   *     type: 'Tomato',
-   *     plants: [{id, varietyName, radius, priority, ...meta}, ...],
-   *     companions: ['Basil', 'Marigold'],
-   *     antagonists: ['Fennel']
-   *   }, ...]
-   * @returns {Object} - Packing result with placements and stats
+   * @param {PlantGroup[]} plantGroups
+   * @returns {PackResult}
    */
-  pack(plantGroups) {
+  pack(plantGroups: PlantGroup[]): PackResult {
     console.log(
       `[HierarchicalPacker] Starting two-level packing for ${plantGroups.length} plant groups`,
     );
@@ -131,9 +218,10 @@ export class HierarchicalCirclePacker {
       );
 
       // Log counts by type
-      const actualCounts = {};
+      const actualCounts: Record<string, number> = {};
       this.circles.forEach((c) => {
-        actualCounts[c.veggieType] = (actualCounts[c.veggieType] || 0) + 1;
+        actualCounts[c.veggieType || ""] =
+          (actualCounts[c.veggieType || ""] || 0) + 1;
       });
 
       Object.keys(this.requestedCounts).forEach((type) => {
@@ -141,7 +229,10 @@ export class HierarchicalCirclePacker {
         const actual = actualCounts[type] || 0;
         if (actual < requested) {
           console.warn(
-            `[HierarchicalPacker]   ${type}: ${actual}/${requested} (${((actual / requested) * 100).toFixed(0)}%)`,
+            `[HierarchicalPacker]   ${type}: ${actual}/${requested} (${(
+              (actual / requested) *
+              100
+            ).toFixed(0)}%)`,
           );
         }
       });
@@ -149,7 +240,7 @@ export class HierarchicalCirclePacker {
 
     // Optional: Lloyd relaxation for refinement
     if (this.circles.length > 0) {
-      this.applyLloydRelaxation(2); // 2 iterations to avoid introducing overlaps
+      this.applyLloydRelaxation(2);
     }
 
     // Final collision resolution pass (critical for dense packing)
@@ -168,7 +259,7 @@ export class HierarchicalCirclePacker {
    * Level 1: Create cluster meta-circles for each plant type
    * Cluster radius is calculated from total area of member circles
    */
-  createClusters(plantGroups) {
+  createClusters(plantGroups: PlantGroup[]): void {
     this.clusters = plantGroups.map((group, index) => {
       // Calculate total area needed for this group
       const totalArea = group.plants.reduce((sum, plant) => {
@@ -181,10 +272,9 @@ export class HierarchicalCirclePacker {
         totalArea / (Math.PI * packingEfficiency),
       );
 
-      // Clusters may overflow bed bounds - plants will be clamped during placement
-
-      // Initialize cluster position (random, clusters may overflow - plants will be clamped)
-      let x, y;
+      // Initialize cluster position (random, clusters may overflow - plants will be bounded)
+      let x: number;
+      let y: number;
 
       // Generate position within bed area (clusters may extend beyond, plants will be bounded)
       if (this.shape === "circle") {
@@ -212,11 +302,11 @@ export class HierarchicalCirclePacker {
         plants: group.plants,
         companions: group.companions || [],
         antagonists: group.antagonists || [],
-        vx: 0, // velocity
+        vx: 0,
         vy: 0,
-        fx: 0, // force accumulator
+        fx: 0,
         fy: 0,
-      };
+      } as Cluster;
     });
   }
 
@@ -224,7 +314,7 @@ export class HierarchicalCirclePacker {
    * Level 1: Pack cluster meta-circles using force-directed layout
    * Applies inter-cluster forces until convergence
    */
-  packClusters() {
+  packClusters(): void {
     let iteration = 0;
     let prevEnergy = Infinity;
 
@@ -271,7 +361,7 @@ export class HierarchicalCirclePacker {
   /**
    * Apply collision/separation forces between overlapping clusters
    */
-  applyClusterCollisionForces() {
+  applyClusterCollisionForces(): void {
     for (let i = 0; i < this.clusters.length; i++) {
       for (let j = i + 1; j < this.clusters.length; j++) {
         const c1 = this.clusters[i];
@@ -306,7 +396,7 @@ export class HierarchicalCirclePacker {
   /**
    * Apply attraction/repulsion based on companion relationships
    */
-  applyClusterCompanionForces() {
+  applyClusterCompanionForces(): void {
     for (let i = 0; i < this.clusters.length; i++) {
       for (let j = i + 1; j < this.clusters.length; j++) {
         const c1 = this.clusters[i];
@@ -356,7 +446,7 @@ export class HierarchicalCirclePacker {
    * Apply gentle boundary containment forces to keep clusters reasonably centered
    * Clusters may overflow, but gentle forces improve initial packing quality
    */
-  applyClusterBoundaryForces() {
+  applyClusterBoundaryForces(): void {
     for (const cluster of this.clusters) {
       // Very gentle boundary forces - encourage central placement without hard limits
       const softMargin = Math.min(this.width, this.height) * 0.1; // 10% margin zone
@@ -400,7 +490,7 @@ export class HierarchicalCirclePacker {
   /**
    * Update cluster positions using velocity Verlet integration
    */
-  updateClusterPositions() {
+  updateClusterPositions(): void {
     for (const cluster of this.clusters) {
       // Update velocity with damping
       cluster.vx = (cluster.vx + cluster.fx) * this.damping;
@@ -418,7 +508,7 @@ export class HierarchicalCirclePacker {
   /**
    * Calculate total system energy (sum of kinetic + potential)
    */
-  calculateClusterEnergy() {
+  calculateClusterEnergy(): number {
     let energy = 0;
 
     for (const cluster of this.clusters) {
@@ -441,18 +531,19 @@ export class HierarchicalCirclePacker {
   /**
    * Level 2: Pack individual plants within their assigned cluster boundaries
    */
-  packPlantsInClusters(plantGroups) {
+  packPlantsInClusters(plantGroups: PlantGroup[]): void {
     this.circles = [];
 
     for (const cluster of this.clusters) {
       // Sort plants by priority (high to low) and size (large to small)
       const sortedPlants = [...cluster.plants].sort((a, b) => {
-        if (b.priority !== a.priority) return b.priority - a.priority;
+        if ((b.priority ?? 0) !== (a.priority ?? 0))
+          return (b.priority ?? 0) - (a.priority ?? 0);
         return b.radius - a.radius;
       });
 
       // Initialize plant circles near cluster centroid
-      const plantCircles = sortedPlants.map((plant, index) => {
+      const plantCircles: Circle[] = sortedPlants.map((plant, index) => {
         // Spiral initialization pattern (better than pure random)
         const angle = index * 2.4; // Golden angle approximation
         const distance = Math.sqrt(index) * 3;
@@ -474,8 +565,8 @@ export class HierarchicalCirclePacker {
           fx: 0,
           fy: 0,
           meta: plant.meta || {},
-          originalSpacing: plant.radius * 2, // Store original diameter for visual display
-        };
+          originalSpacing: (plant.radius || 0) * 2,
+        } as Circle;
       });
 
       // Run force simulation for this cluster
@@ -489,7 +580,7 @@ export class HierarchicalCirclePacker {
   /**
    * Pack plants within a single cluster using force-directed layout
    */
-  packPlantsInCluster(cluster, plantCircles) {
+  packPlantsInCluster(cluster: Cluster, plantCircles: Circle[]): void {
     const maxIterations = 500; // Increased from 300
     let iteration = 0;
     let prevEnergy = Infinity;
@@ -528,7 +619,7 @@ export class HierarchicalCirclePacker {
   /**
    * Resolve collisions within a cluster
    */
-  resolveClusterCollisions(plantCircles) {
+  resolveClusterCollisions(plantCircles: Circle[]): void {
     for (let pass = 0; pass < 3; pass++) {
       for (let i = 0; i < plantCircles.length; i++) {
         for (let j = i + 1; j < plantCircles.length; j++) {
@@ -564,7 +655,7 @@ export class HierarchicalCirclePacker {
   /**
    * Apply collision forces between plants in the same cluster
    */
-  applyPlantCollisionForces(plantCircles) {
+  applyPlantCollisionForces(plantCircles: Circle[]): void {
     for (let i = 0; i < plantCircles.length; i++) {
       for (let j = i + 1; j < plantCircles.length; j++) {
         const p1 = plantCircles[i];
@@ -588,8 +679,9 @@ export class HierarchicalCirclePacker {
           const ny = dy / distance;
 
           // Priority-weighted collision (higher priority plants "win")
-          const weight1 = p1.priority / (p1.priority + p2.priority);
-          const weight2 = p2.priority / (p1.priority + p2.priority);
+          const totalPriority = (p1.priority ?? 1) + (p2.priority ?? 1);
+          const weight1 = (p1.priority ?? 1) / totalPriority;
+          const weight2 = (p2.priority ?? 1) / totalPriority;
 
           p1.fx -= nx * force * weight2;
           p1.fy -= ny * force * weight2;
@@ -604,7 +696,7 @@ export class HierarchicalCirclePacker {
    * Apply attraction force toward cluster centroid
    * Keeps plants within their assigned cluster
    */
-  applyClusterAttractionForce(cluster, plantCircles) {
+  applyClusterAttractionForce(cluster: Cluster, plantCircles: Circle[]): void {
     for (const plant of plantCircles) {
       const dx = cluster.x - plant.x;
       const dy = cluster.y - plant.y;
@@ -625,7 +717,10 @@ export class HierarchicalCirclePacker {
   /**
    * Keep plants within cluster boundary
    */
-  applyClusterBoundaryForces_Plants(cluster, plantCircles) {
+  applyClusterBoundaryForces_Plants(
+    cluster: Cluster,
+    plantCircles: Circle[],
+  ): void {
     for (const plant of plantCircles) {
       const dx = plant.x - cluster.x;
       const dy = plant.y - cluster.y;
@@ -646,12 +741,8 @@ export class HierarchicalCirclePacker {
 
   /**
    * Check if a circle (plant) is fully inside the bed shape
-   * @param {number} x - Circle center x
-   * @param {number} y - Circle center y
-   * @param {number} radius - Circle radius
-   * @returns {boolean} - True if circle is fully inside
    */
-  isCircleInsideBed(x, y, radius) {
+  isCircleInsideBed(x: number, y: number, radius: number): boolean {
     if (this.shape === "circle") {
       const centerX = this.width / 2;
       const centerY = this.height / 2;
@@ -727,12 +818,12 @@ export class HierarchicalCirclePacker {
 
   /**
    * Clamp a circle position to be inside the bed shape
-   * @param {number} x - Current x position
-   * @param {number} y - Current y position
-   * @param {number} radius - Circle radius
-   * @returns {{x: number, y: number}} - Clamped position
    */
-  clampPositionToBed(x, y, radius) {
+  clampPositionToBed(
+    x: number,
+    y: number,
+    radius: number,
+  ): { x: number; y: number } {
     if (this.shape === "circle") {
       const centerX = this.width / 2;
       const centerY = this.height / 2;
@@ -857,7 +948,7 @@ export class HierarchicalCirclePacker {
   /**
    * Update plant positions with velocity damping
    */
-  updatePlantPositions(plantCircles) {
+  updatePlantPositions(plantCircles: Circle[]): void {
     for (const plant of plantCircles) {
       plant.vx = (plant.vx + plant.fx) * this.damping;
       plant.vy = (plant.vy + plant.fy) * this.damping;
@@ -875,7 +966,7 @@ export class HierarchicalCirclePacker {
   /**
    * Calculate energy for plant circles
    */
-  calculatePlantEnergy(plantCircles) {
+  calculatePlantEnergy(plantCircles: Circle[]): number {
     let energy = 0;
     for (const plant of plantCircles) {
       energy += 0.5 * (plant.vx * plant.vx + plant.vy * plant.vy);
@@ -885,12 +976,8 @@ export class HierarchicalCirclePacker {
 
   /**
    * Apply Lloyd relaxation for uniform distribution refinement
-   * Moves each circle toward the centroid of its Voronoi cell
-   *
-   * Based on Bridson (2007) and Lloyd's algorithm
-   * Modified to be more conservative to prevent introducing overlaps
    */
-  applyLloydRelaxation(iterations = 2) {
+  applyLloydRelaxation(iterations = 2): void {
     console.log(
       `[HierarchicalPacker] Applying Lloyd relaxation (${iterations} iterations)`,
     );
@@ -951,7 +1038,7 @@ export class HierarchicalCirclePacker {
   /**
    * Find neighboring circles within a given radius
    */
-  findNeighbors(circle, radius) {
+  findNeighbors(circle: Circle, radius: number): Circle[] {
     return this.circles.filter((other) => {
       if (other === circle) return false;
       const dx = other.x - circle.x;
@@ -965,7 +1052,7 @@ export class HierarchicalCirclePacker {
    * Resolve all collisions using position-based dynamics
    * Quick collision resolution pass after Lloyd relaxation
    */
-  resolveAllCollisions() {
+  resolveAllCollisions(): void {
     for (let i = 0; i < this.circles.length; i++) {
       for (let j = i + 1; j < this.circles.length; j++) {
         const c1 = this.circles[i];
@@ -994,7 +1081,7 @@ export class HierarchicalCirclePacker {
    * Final aggressive collision resolution pass
    * If force simulation fails, falls back to greedy non-overlapping placement
    */
-  finalCollisionResolution() {
+  finalCollisionResolution(): void {
     console.log("[HierarchicalPacker] Running final collision resolution...");
 
     let maxIterations = 100;
@@ -1021,8 +1108,10 @@ export class HierarchicalCirclePacker {
             const nx = dx / distance;
             const ny = dy / distance;
 
-            const weight1 = c1.priority / (c1.priority + c2.priority);
-            const weight2 = c2.priority / (c1.priority + c2.priority);
+            const weight1 =
+              (c1.priority ?? 1) / ((c1.priority ?? 1) + (c2.priority ?? 1));
+            const weight2 =
+              (c2.priority ?? 1) / ((c1.priority ?? 1) + (c2.priority ?? 1));
 
             c1.x -= nx * overlap * weight2;
             c1.y -= ny * overlap * weight2;
@@ -1064,19 +1153,20 @@ export class HierarchicalCirclePacker {
    * Greedy non-overlapping fallback placement
    * Guarantees zero overlaps by trying positions until one fits
    */
-  greedyNonOverlappingFallback() {
+  greedyNonOverlappingFallback(): void {
     console.log(
       "[HierarchicalPacker] Applying greedy non-overlapping placement...",
     );
 
     // Sort circles by priority (high first) then size (large first)
     const sortedCircles = [...this.circles].sort((a, b) => {
-      if (b.priority !== a.priority) return b.priority - a.priority;
+      if ((b.priority ?? 0) !== (a.priority ?? 0))
+        return (b.priority ?? 0) - (a.priority ?? 0);
       return b.radius - a.radius;
     });
 
-    const placed = [];
-    const failed = [];
+    const placed: Circle[] = [];
+    const failed: Circle[] = [];
 
     for (const circle of sortedCircles) {
       // Try to place near its cluster centroid first
@@ -1084,7 +1174,7 @@ export class HierarchicalCirclePacker {
       const targetX = cluster ? cluster.x : this.width / 2;
       const targetY = cluster ? cluster.y : this.height / 2;
 
-      let bestPosition = null;
+      let bestPosition: { x: number; y: number } | null = null;
       let bestDistance = Infinity;
 
       // Try positions in expanding spiral around target
@@ -1160,21 +1250,20 @@ export class HierarchicalCirclePacker {
    * Emergency recovery when greedy fallback fails completely
    * Uses much larger search area and more lenient spacing
    */
-  emergencyRecoveryPlacement(failedPlants) {
-    const placed = [];
+  emergencyRecoveryPlacement(failedPlants: Circle[]): void {
+    const placed: Circle[] = [];
 
     // Sort by priority and size
     const sortedPlants = failedPlants.sort((a, b) => {
-      if (b.priority !== a.priority) return b.priority - a.priority;
+      if ((b.priority ?? 0) !== (a.priority ?? 0))
+        return (b.priority ?? 0) - (a.priority ?? 0);
       return b.radius - a.radius;
     });
 
     for (const plant of sortedPlants) {
-      let bestPosition = null;
-      let bestDistance = Infinity;
+      let bestPosition: { x: number; y: number } | null = null;
 
       // Try grid-based placement with much larger search
-      const gridSize = 5;
       const maxAttempts = 2000; // Much more attempts
 
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -1227,10 +1316,8 @@ export class HierarchicalCirclePacker {
 
   /**
    * Multipass ratio-balancing optimization with space-first approach
-   * Phase 1: Fill available space as much as possible
-   * Phase 2: Balance ratios intelligently based on physical constraints
    */
-  spaceFillOptimization() {
+  spaceFillOptimization(): void {
     if (!this.plantGroups || this.plantGroups.length === 0) {
       return;
     }
@@ -1246,7 +1333,7 @@ export class HierarchicalCirclePacker {
       (sum, g) => sum + (g.plants[0]?.priority || 1),
       0,
     );
-    const targetRatios = new Map();
+    const targetRatios = new Map<string, number>();
 
     this.plantGroups.forEach((group) => {
       const priority = group.plants[0]?.priority || 1;
@@ -1278,27 +1365,30 @@ export class HierarchicalCirclePacker {
     }
 
     // Log final distribution
-    const finalCounts = new Map();
+    const finalCounts = new Map<string, number>();
     this.circles.forEach((c) => {
-      finalCounts.set(c.veggieType, (finalCounts.get(c.veggieType) || 0) + 1);
+      finalCounts.set(
+        c.veggieType || "",
+        (finalCounts.get(c.veggieType || "") || 0) + 1,
+      );
     });
 
     console.log("[HierarchicalPacker] Final distribution:");
     finalCounts.forEach((count, type) => {
       const ratio = count / this.circles.length;
       const target = targetRatios.get(type) || 0;
-      const deviation = ((ratio - target) * 100).toFixed(1);
+      const deviationNum = (ratio - target) * 100;
+      const deviation = deviationNum.toFixed(1);
       console.log(
-        `[HierarchicalPacker]   ${type}: ${count} plants (${(ratio * 100).toFixed(1)}%, target ${(target * 100).toFixed(1)}%, ${deviation > 0 ? "+" : ""}${deviation}%)`,
+        `[HierarchicalPacker]   ${type}: ${count} plants (${(ratio * 100).toFixed(1)}%, target ${(target * 100).toFixed(1)}%, ${deviationNum > 0 ? "+" : ""}${deviation}%)`,
       );
     });
   }
 
   /**
    * Aggressively fill available space with all plant types
-   * Prioritizes larger plants for better space efficiency
    */
-  aggressiveSpaceFilling(targetRatios) {
+  aggressiveSpaceFilling(targetRatios: Map<string, number>): number {
     const maxRounds = 30; // Much more rounds for better filling
     let totalAdded = 0;
 
@@ -1306,20 +1396,18 @@ export class HierarchicalCirclePacker {
       let addedInRound = 0;
 
       // Sort plant types by size (largest first) for each round
-      const typesBySize = this.plantGroups
-        .map((group) => ({
-          group,
-          type: group.type,
-          avgRadius:
-            group.plants.reduce((sum, p) => sum + p.radius, 0) /
-            group.plants.length,
-          currentCount: this.circles.filter((c) => c.veggieType === group.type)
-            .length,
-        }))
-        .sort((a, b) => b.avgRadius - a.avgRadius);
+      const typesBySize = this.plantGroups!.map((group) => ({
+        group,
+        type: group.type,
+        avgRadius:
+          group.plants.reduce((sum, p) => sum + p.radius, 0) /
+          group.plants.length,
+        currentCount: this.circles.filter((c) => c.veggieType === group.type)
+          .length,
+      })).sort((a, b) => b.avgRadius - a.avgRadius);
 
       // Try to add one plant of each type per round (allows all types to succeed across rounds)
-      for (const { group, type } of typesBySize) {
+      for (const { group } of typesBySize) {
         const added = this.tryAddPlant(group);
         if (added) {
           addedInRound++;
@@ -1344,10 +1432,11 @@ export class HierarchicalCirclePacker {
 
   /**
    * Intelligently balance ratios after space-filling
-   * Only removes plants if ratios are severely imbalanced (>25% deviation)
-   * Prefers adding underrepresented plants over removing overrepresented ones
    */
-  intelligentRatioBalance(targetRatios, spaceFilled) {
+  intelligentRatioBalance(
+    targetRatios: Map<string, number>,
+    spaceFilled: number,
+  ): void {
     if (spaceFilled === 0) {
       // If no space-filling happened, do traditional balancing
       this.balanceToTargetRatios(targetRatios);
@@ -1356,18 +1445,23 @@ export class HierarchicalCirclePacker {
 
     console.log("[HierarchicalPacker] Applying intelligent ratio balancing...");
 
-    const currentCounts = new Map();
+    const currentCounts = new Map<string, number>();
     this.circles.forEach((c) => {
       currentCounts.set(
-        c.veggieType,
-        (currentCounts.get(c.veggieType) || 0) + 1,
+        c.veggieType || "",
+        (currentCounts.get(c.veggieType || "") || 0) + 1,
       );
     });
 
     const total = this.circles.length;
 
     // Calculate deviations
-    const deviations = [];
+    const deviations: {
+      type: string;
+      target: number;
+      current: number;
+      deviation: number;
+    }[] = [];
     targetRatios.forEach((target, type) => {
       const current = (currentCounts.get(type) || 0) / total;
       const deviation = Math.abs(current - target);
@@ -1397,7 +1491,7 @@ export class HierarchicalCirclePacker {
     for (const { type } of underrepresented) {
       if (rebalanced >= 5) break;
 
-      const group = this.plantGroups.find((g) => g.type === type);
+      const group = this.plantGroups!.find((g) => g.type === type);
       if (group && this.tryAddPlant(group)) {
         console.log(
           `[HierarchicalPacker]   Added 1 ${type} (underrepresented)`,
@@ -1415,31 +1509,30 @@ export class HierarchicalCirclePacker {
 
   /**
    * Balance existing plant distribution to match target ratios
-   * Traditional approach - used when space-filling didn't occur
    */
-  balanceToTargetRatios(targetRatios) {
+  balanceToTargetRatios(targetRatios: Map<string, number>): void {
     const maxBalanceIterations = 20;
     let iteration = 0;
 
     while (iteration < maxBalanceIterations) {
       // Calculate current ratios
-      const currentCounts = new Map();
+      const currentCounts = new Map<string, number>();
       this.circles.forEach((c) => {
         currentCounts.set(
-          c.veggieType,
-          (currentCounts.get(c.veggieType) || 0) + 1,
+          c.veggieType || "",
+          (currentCounts.get(c.veggieType || "") || 0) + 1,
         );
       });
 
       const total = this.circles.length;
-      const currentRatios = new Map();
+      const currentRatios = new Map<string, number>();
       currentCounts.forEach((count, type) => {
         currentRatios.set(type, count / total);
       });
 
       // Find most underrepresented type (furthest below target)
       let maxDeficit = 0;
-      let underrepType = null;
+      let underrepType: string | null = null;
 
       targetRatios.forEach((target, type) => {
         const current = currentRatios.get(type) || 0;
@@ -1452,7 +1545,6 @@ export class HierarchicalCirclePacker {
 
       // If no significant deficit, we're balanced
       if (maxDeficit < 0.05) {
-        // Within 5% is acceptable for traditional balancing
         console.log(
           `[HierarchicalPacker] Distribution balanced after ${iteration} iterations`,
         );
@@ -1460,7 +1552,7 @@ export class HierarchicalCirclePacker {
       }
 
       // Try to add one plant of the underrepresented type
-      const group = this.plantGroups.find((g) => g.type === underrepType);
+      const group = this.plantGroups!.find((g) => g.type === underrepType);
       if (!group || group.plants.length === 0) {
         iteration++;
         continue;
@@ -1483,15 +1575,15 @@ export class HierarchicalCirclePacker {
    * Try to add one plant of the specified type
    * Returns true if successful, false otherwise
    */
-  tryAddPlant(group) {
+  tryAddPlant(group: PlantGroup): boolean {
     const template = group.plants[0];
     const cluster = this.clusters.find((c) => c.type === group.type);
     if (!cluster) return false;
 
     let nextPlantId =
-      Math.max(...this.circles.map((c) => parseInt(c.id) || 0), 0) + 1;
+      Math.max(...this.circles.map((c) => parseInt(c.id || "0") || 0), 0) + 1;
 
-    const candidatePlant = {
+    const candidatePlant: Circle = {
       id: String(nextPlantId),
       veggieType: template.veggieType,
       varietyName: template.varietyName,
@@ -1505,6 +1597,8 @@ export class HierarchicalCirclePacker {
       vy: 0,
       fx: 0,
       fy: 0,
+      x: cluster.x,
+      y: cluster.y,
     };
 
     const position = this.findSpaceForPlant(candidatePlant, cluster);
@@ -1541,7 +1635,7 @@ export class HierarchicalCirclePacker {
   /**
    * Remove one plant of the specified type (prefer edge plants)
    */
-  removeOnePlant(type) {
+  removeOnePlant(type: string): void {
     // Find plants of this type
     const plantsOfType = this.circles.filter((c) => c.veggieType === type);
     if (plantsOfType.length === 0) return;
@@ -1565,18 +1659,21 @@ export class HierarchicalCirclePacker {
 
   /**
    * Find a valid position for a new plant in remaining space
-   * Returns {x, y} if found, null otherwise
    */
-  findSpaceForPlant(plant, cluster) {
+  findSpaceForPlant(
+    plant: Circle,
+    cluster: Cluster,
+  ): { x: number; y: number } | null {
     const targetX = cluster.x;
     const targetY = cluster.y;
     const maxAttempts = 800; // Much more attempts for better coverage
 
-    let bestPosition = null;
+    let bestPosition: { x: number; y: number } | null = null;
     let bestDistance = Infinity;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      let x, y;
+      let x: number;
+      let y: number;
 
       // Use multiple search strategies
       if (attempt < 400) {
@@ -1641,9 +1738,8 @@ export class HierarchicalCirclePacker {
 
   /**
    * Final cleanup pass to ensure all plants respect bed shape boundaries
-   * This is critical for pill-shaped beds where plants may drift outside rounded edges
    */
-  finalBoundsCleanup() {
+  finalBoundsCleanup(): void {
     console.log("[HierarchicalPacker] Running final bounds cleanup...");
 
     let clamped = 0;
@@ -1686,7 +1782,9 @@ export class HierarchicalCirclePacker {
         } else {
           // Cannot clamp without collision - remove this plant
           console.warn(
-            `[HierarchicalPacker] Removing plant ${plant.id} at (${plant.x.toFixed(1)}, ${plant.y.toFixed(1)}) - outside bounds and cannot clamp`,
+            `[HierarchicalPacker] Removing plant ${plant.id} at (${plant.x.toFixed(
+              1,
+            )}, ${plant.y.toFixed(1)}) - outside bounds and cannot clamp`,
           );
           this.circles.splice(i, 1);
           removed++;
@@ -1707,16 +1805,15 @@ export class HierarchicalCirclePacker {
 
   /**
    * Check if a circle at (x, y) with radius r is within bed bounds
-   * Handles rectangle, circle, and pill shapes
    */
-  isWithinBounds(x, y, radius) {
+  isWithinBounds(x: number, y: number, radius: number): boolean {
     return this.isCircleInsideBed(x, y, radius);
   }
 
   /**
    * Build final result with placements and statistics
    */
-  buildResult() {
+  buildResult(): PackResult {
     const placements = this.circles.map((circle) => ({
       id: circle.id,
       veggieType: circle.veggieType,
@@ -1734,9 +1831,10 @@ export class HierarchicalCirclePacker {
     }));
 
     // Calculate actual vs requested counts by type
-    const actualCounts = {};
+    const actualCounts: Record<string, number> = {};
     this.circles.forEach((c) => {
-      actualCounts[c.veggieType] = (actualCounts[c.veggieType] || 0) + 1;
+      actualCounts[c.veggieType || ""] =
+        (actualCounts[c.veggieType || ""] || 0) + 1;
     });
 
     const plantTypeCounts = Object.keys(this.requestedCounts || {}).map(
@@ -1798,11 +1896,15 @@ export class HierarchicalCirclePacker {
   /**
    * Validate final placement for bounds and collision violations
    */
-  validatePlacements() {
+  validatePlacements(): {
+    bounds: any[];
+    collisions: any[];
+    clusterOverflow: any[];
+  } {
     const violations = {
-      bounds: [],
-      collisions: [],
-      clusterOverflow: [],
+      bounds: [] as any[],
+      collisions: [] as any[],
+      clusterOverflow: [] as any[],
     };
 
     // Check bounds
@@ -1856,7 +1958,7 @@ export class HierarchicalCirclePacker {
   /**
    * Get current state for visualization/debugging
    */
-  getState() {
+  getState(): Record<string, any> {
     return {
       clusters: this.clusters,
       circles: this.circles,
@@ -1876,7 +1978,7 @@ export class HierarchicalCirclePacker {
   /**
    * Reset the packer to initial state
    */
-  reset() {
+  reset(): void {
     this.clusters = [];
     this.circles = [];
     this.iteration_count = 0;

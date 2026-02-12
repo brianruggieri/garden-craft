@@ -7,7 +7,7 @@
 
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert";
-import { ForceDirectedGardenPacker } from "../../../packer/ForceDirectedGardenPacker.js";
+import { ForceDirectedGardenPacker } from "../../../packer/ForceDirectedGardenPacker";
 
 describe("Priority-Weighted Distribution", () => {
   let bed;

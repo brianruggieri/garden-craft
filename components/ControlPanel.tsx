@@ -7,7 +7,7 @@ import {
   SeedVariety,
   BedLayout,
   PlantMeta,
-} from "../types";
+} from "../shared/types";
 
 interface ControlPanelProps {
   beds: GardenBed[];
@@ -643,9 +643,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     >
                       <div className="flex justify-between items-center mb-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-lg">
-                            {meta?.icon || "🌱"}
-                          </span>
+                          <span className="text-lg">{meta?.icon || "🌱"}</span>
                           <span className="text-xs font-bold text-slate-700">
                             {vType}
                           </span>
@@ -686,44 +684,44 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                           <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">
                             Select Actual Varieties
                           </p>
-                          {seedVarieties.filter(
-                            (v) => v.type === vType,
-                          ).map((variety) => {
-                            const isSelected = seed?.selectedVarieties.some(
-                              (sv) => sv.id === variety.id,
-                            );
-                            return (
-                              <button
-                                key={variety.id}
-                                onClick={() => toggleVariety(vType, variety)}
-                                className={`w-full text-left p-2 rounded border transition-all ${
-                                  isSelected
-                                    ? "bg-green-50 border-green-300 shadow-sm"
-                                    : "bg-white border-slate-100 hover:border-slate-300"
-                                }`}
-                              >
-                                <div className="flex justify-between items-center">
-                                  <span className="text-[10px] font-bold text-slate-700">
-                                    {variety.name}
-                                  </span>
-                                  {isSelected && (
-                                    <i className="fas fa-check text-green-500 text-[8px]"></i>
-                                  )}
-                                </div>
-                                <p className="text-[8px] text-slate-400 leading-tight mt-0.5">
-                                  {variety.description}
-                                </p>
-                                <div className="flex gap-1 mt-1">
-                                  <span className="text-[7px] bg-slate-100 px-1 rounded text-slate-500">
-                                    Space: {variety.spacing}"
-                                  </span>
-                                  <span className="text-[7px] bg-slate-100 px-1 rounded text-slate-500">
-                                    Root: {variety.rootDepth}
-                                  </span>
-                                </div>
-                              </button>
-                            );
-                          })}
+                          {seedVarieties
+                            .filter((v) => v.type === vType)
+                            .map((variety) => {
+                              const isSelected = seed?.selectedVarieties.some(
+                                (sv) => sv.id === variety.id,
+                              );
+                              return (
+                                <button
+                                  key={variety.id}
+                                  onClick={() => toggleVariety(vType, variety)}
+                                  className={`w-full text-left p-2 rounded border transition-all ${
+                                    isSelected
+                                      ? "bg-green-50 border-green-300 shadow-sm"
+                                      : "bg-white border-slate-100 hover:border-slate-300"
+                                  }`}
+                                >
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-[10px] font-bold text-slate-700">
+                                      {variety.name}
+                                    </span>
+                                    {isSelected && (
+                                      <i className="fas fa-check text-green-500 text-[8px]"></i>
+                                    )}
+                                  </div>
+                                  <p className="text-[8px] text-slate-400 leading-tight mt-0.5">
+                                    {variety.description}
+                                  </p>
+                                  <div className="flex gap-1 mt-1">
+                                    <span className="text-[7px] bg-slate-100 px-1 rounded text-slate-500">
+                                      Space: {variety.spacing}"
+                                    </span>
+                                    <span className="text-[7px] bg-slate-100 px-1 rounded text-slate-500">
+                                      Root: {variety.rootDepth}
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })}
                         </div>
                       )}
                     </div>

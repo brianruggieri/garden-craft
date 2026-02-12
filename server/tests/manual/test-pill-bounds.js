@@ -3,7 +3,7 @@
  * Validates that plants respect rounded edges of pill/stadium-shaped beds
  */
 
-import { HierarchicalCirclePacker } from "../../packer/HierarchicalCirclePacker.js";
+import { HierarchicalCirclePacker } from "../../packer/HierarchicalCirclePacker";
 
 console.log("=== Testing Pill-Shaped Bed Bounds ===\n");
 

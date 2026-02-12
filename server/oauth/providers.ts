@@ -1,36 +1,81 @@
 const DEFAULT_SCOPE = "openid profile email";
 
-function normalizeUrl(value) {
+export interface OAuthProvider {
+  id: string;
+  name: string;
+  // Make common fields optional/null-able so provider lists can be created
+  // even when some environment variables are not present.
+  supportsOAuth?: boolean;
+  authorizeUrl?: string | null;
+  tokenUrl?: string | null;
+  deviceUrl?: string | null;
+  clientId?: string | null;
+  clientSecret?: string | null;
+  scopes?: string[];
+  redirectUri?: string | null;
+  tokenAuthMethod?: "basic" | "post";
+  extraAuthParams?: Record<string, string>;
+  extraTokenParams?: Record<string, string>;
+  postAuthRedirect?: string;
+  baseUrl?: string | null;
+}
+
+function normalizeUrl(value: string | null | undefined): string | null {
   if (!value) return null;
   return String(value).trim().replace(/\/+$/, "");
 }
 
-function parseScopes(value, fallback = DEFAULT_SCOPE) {
+function parseScopes(
+  value: string | string[] | undefined,
+  fallback: string = DEFAULT_SCOPE,
+): string[] {
   if (Array.isArray(value)) return value;
   const raw = (value || fallback || "").trim();
   if (!raw) return [];
   return raw.split(/[,\s]+/g).filter(Boolean);
 }
 
-function buildRedirectUri(providerId, base) {
+function buildRedirectUri(
+  providerId: string,
+  base: string | null,
+): string | null {
   const root = normalizeUrl(base);
   if (!root) return null;
   return `${root}/oauth/${providerId}/callback`;
 }
 
-function ensureConfig(provider, { allowIncomplete = false } = {}) {
-  if (allowIncomplete) return provider;
+interface EnsureConfigOptions {
+  allowIncomplete?: boolean;
+}
+
+function ensureConfig(
+  provider: Partial<OAuthProvider>,
+  { allowIncomplete = false }: EnsureConfigOptions = {},
+): OAuthProvider | null {
+  if (allowIncomplete) return provider as OAuthProvider;
   if (!provider.clientId) return null;
   if (!provider.authorizeUrl) return null;
   if (!provider.tokenUrl) return null;
   if (!provider.redirectUri) return null;
-  return provider;
+  return provider as OAuthProvider;
+}
+
+export interface LoadOAuthProvidersOptions {
+  baseUrl?: string;
+  redirectBaseUrl?: string;
+  allowIncomplete?: boolean;
+  postAuthRedirect?: string;
 }
 
 export function loadOAuthProviders(
-  env = process.env,
-  { baseUrl, redirectBaseUrl, allowIncomplete = false, postAuthRedirect } = {},
-) {
+  env: NodeJS.ProcessEnv = process.env,
+  {
+    baseUrl,
+    redirectBaseUrl,
+    allowIncomplete = false,
+    postAuthRedirect,
+  }: LoadOAuthProvidersOptions = {},
+): OAuthProvider[] {
   const base = normalizeUrl(baseUrl);
   const redirectBase = normalizeUrl(redirectBaseUrl || base);
 
@@ -56,7 +101,8 @@ export function loadOAuthProviders(
         env.GEMINI_OAUTH_REDIRECT_URI ||
         env.GOOGLE_OAUTH_REDIRECT_URI ||
         buildRedirectUri("gemini", redirectBase),
-      tokenAuthMethod: env.GEMINI_OAUTH_TOKEN_AUTH_METHOD || "post",
+      tokenAuthMethod:
+        (env.GEMINI_OAUTH_TOKEN_AUTH_METHOD as "basic" | "post") || "post",
       extraAuthParams: {},
       extraTokenParams: {},
       postAuthRedirect,
@@ -79,7 +125,8 @@ export function loadOAuthProviders(
       redirectUri:
         env.OPENAI_OAUTH_REDIRECT_URI ||
         buildRedirectUri("openai", redirectBase),
-      tokenAuthMethod: env.OPENAI_OAUTH_TOKEN_AUTH_METHOD || "post",
+      tokenAuthMethod:
+        (env.OPENAI_OAUTH_TOKEN_AUTH_METHOD as "basic" | "post") || "post",
       extraAuthParams: {},
       extraTokenParams: {},
       postAuthRedirect,
@@ -101,7 +148,8 @@ export function loadOAuthProviders(
       redirectUri:
         env.ANTHROPIC_OAUTH_REDIRECT_URI ||
         buildRedirectUri("anthropic", redirectBase),
-      tokenAuthMethod: env.ANTHROPIC_OAUTH_TOKEN_AUTH_METHOD || "post",
+      tokenAuthMethod:
+        (env.ANTHROPIC_OAUTH_TOKEN_AUTH_METHOD as "basic" | "post") || "post",
       extraAuthParams: {},
       extraTokenParams: {},
       postAuthRedirect,
@@ -110,7 +158,9 @@ export function loadOAuthProviders(
     { allowIncomplete },
   );
 
-  return [gemini, openai, anthropic].filter(Boolean);
+  return [gemini, openai, anthropic].filter(
+    (p): p is OAuthProvider => p !== null,
+  );
 }
 
 export default {

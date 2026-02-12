@@ -2,8 +2,8 @@
  * Test the circle packer and garden packer algorithms
  */
 
-import { CirclePacker } from "../../packer/CirclePacker.js";
-import { GardenPacker } from "../../packer/GardenPacker.js";
+import { CirclePacker } from "../../packer/CirclePacker";
+import { GardenPacker } from "../../packer/GardenPacker";
 
 console.log("=== CirclePacker Tests ===\n");
 

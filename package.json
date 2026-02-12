@@ -9,10 +9,10 @@
     "preview": "vite preview",
     "server": "tsx server/index.ts",
     "dev:server": "tsx watch server/index.ts",
-    "test": "node --test \"server/tests/unit/**/*.test.js\"",
-    "test:unit": "node --test \"server/tests/unit/**/*.test.js\"",
-    "test:integration": "RUN_INTEGRATION=1 node --test \"server/tests/integration/**/*.test.js\"",
-    "test:all": "node --test \"server/tests/**/*.test.js\""
+    "test": "tsx node --test \"server/tests/unit/**/*.test.js\"",
+    "test:unit": "tsx node --test \"server/tests/unit/**/*.test.js\"",
+    "test:integration": "RUN_INTEGRATION=1 tsx node --test \"server/tests/integration/**/*.test.js\"",
+    "test:all": "tsx node --test \"server/tests/**/*.test.js\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.61.0",
@@ -25,6 +25,7 @@
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@fortawesome/fontawesome-free": "^7.2.0",
     "@tailwindcss/vite": "^4.1.18",
     "@types/express": "^5.0.6",
     "@types/node": "^22.14.0",

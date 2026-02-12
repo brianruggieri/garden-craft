@@ -1,5 +1,10 @@
 import React, { useState } from "react";
-import { GardenBed, BedLayout, PlantPlacement, PlantMeta } from "../types";
+import {
+  GardenBed,
+  BedLayout,
+  PlantPlacement,
+  PlantMeta,
+} from "../shared/types";
 import { GRID_SIZE, INCHES_PER_GRID } from "../constants";
 
 interface GardenBedViewProps {

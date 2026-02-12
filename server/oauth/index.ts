@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { URLSearchParams } from "url";
+import type { Request, Response } from "express";
 
 /**
  * Generic OAuth helper endpoints for AI providers.
@@ -25,15 +26,24 @@ import { URLSearchParams } from "url";
 
 const DEFAULT_STATE_TTL_MS = 10 * 60 * 1000;
 
-class MemoryStore {
+interface StoreEntry<T = any> {
+  value: T;
+  expiresAt: number;
+}
+
+export class MemoryStore {
+  private _map: Map<string, StoreEntry>;
+
   constructor() {
     this._map = new Map();
   }
-  set(key, value, ttlMs = DEFAULT_STATE_TTL_MS) {
+
+  set(key: string, value: any, ttlMs: number = DEFAULT_STATE_TTL_MS): void {
     const expiresAt = Date.now() + ttlMs;
     this._map.set(key, { value, expiresAt });
   }
-  get(key) {
+
+  get(key: string): any {
     const entry = this._map.get(key);
     if (!entry) return null;
     if (Date.now() > entry.expiresAt) {
@@ -42,12 +52,13 @@ class MemoryStore {
     }
     return entry.value;
   }
-  delete(key) {
+
+  delete(key: string): void {
     this._map.delete(key);
   }
 }
 
-function base64url(buf) {
+function base64url(buf: Buffer): string {
   return Buffer.from(buf)
     .toString("base64")
     .replace(/\+/g, "-")
@@ -55,13 +66,23 @@ function base64url(buf) {
     .replace(/=+$/, "");
 }
 
-function createVerifier() {
+function createVerifier(): string {
   return base64url(crypto.randomBytes(32));
 }
 
-function createChallenge(verifier) {
+function createChallenge(verifier: string): string {
   const hash = crypto.createHash("sha256").update(verifier).digest();
   return base64url(hash);
+}
+
+interface BuildAuthUrlOptions {
+  authorizeUrl: string;
+  clientId: string;
+  redirectUri: string;
+  scopes?: string[];
+  state: string;
+  codeChallenge: string;
+  extraAuthParams?: Record<string, string>;
 }
 
 function buildAuthUrl({
@@ -72,7 +93,7 @@ function buildAuthUrl({
   state,
   codeChallenge,
   extraAuthParams = {},
-}) {
+}: BuildAuthUrlOptions): string {
   const params = new URLSearchParams({
     response_type: "code",
     client_id: clientId,
@@ -87,6 +108,18 @@ function buildAuthUrl({
   return `${authorizeUrl}?${params.toString()}`;
 }
 
+interface ExchangeTokenOptions {
+  tokenUrl: string;
+  code: string;
+  clientId: string;
+  clientSecret?: string;
+  redirectUri: string;
+  codeVerifier: string;
+  tokenAuthMethod?: "basic" | "post";
+  extraTokenParams?: Record<string, string>;
+  fetchFn: typeof fetch;
+}
+
 async function exchangeToken({
   tokenUrl,
   code,
@@ -97,7 +130,7 @@ async function exchangeToken({
   tokenAuthMethod = "basic",
   extraTokenParams = {},
   fetchFn,
-}) {
+}: ExchangeTokenOptions): Promise<any> {
   const params = new URLSearchParams({
     grant_type: "authorization_code",
     code,
@@ -107,7 +140,7 @@ async function exchangeToken({
     ...extraTokenParams,
   });
 
-  const headers = {
+  const headers: Record<string, string> = {
     "Content-Type": "application/x-www-form-urlencoded",
   };
 
@@ -132,13 +165,73 @@ async function exchangeToken({
   return res.json();
 }
 
-function createProviderRegistry(providers = []) {
-  const map = new Map();
+export interface OAuthProvider {
+  id: string;
+  name: string;
+  supportsOAuth?: boolean;
+  // Many environments/config loaders may leave some OAuth endpoints or ids unset.
+  // Allow `null` so provider lists can be created even when values are missing.
+  authorizeUrl: string | null;
+  tokenUrl: string | null;
+  deviceUrl?: string | null;
+  clientId: string | null;
+  clientSecret?: string | null;
+  scopes: string[];
+  redirectUri: string | null;
+  tokenAuthMethod?: "basic" | "post";
+  extraAuthParams?: Record<string, string>;
+  extraTokenParams?: Record<string, string>;
+  postAuthRedirect?: string;
+}
+
+function createProviderRegistry(
+  providers: OAuthProvider[] = [],
+): Map<string, OAuthProvider> {
+  const map = new Map<string, OAuthProvider>();
   providers.forEach((p) => {
     if (!p || !p.id) return;
     map.set(String(p.id).toLowerCase(), p);
   });
   return map;
+}
+
+interface StateEntry {
+  providerId: string;
+  verifier: string;
+  redirectTarget: string;
+}
+
+interface DeviceEntry {
+  providerId: string;
+  deviceCode: string;
+  userCode: string | null;
+  verificationUri: string | null;
+  verificationUriComplete: string | null;
+  interval: number;
+  expiresAt: number | null;
+}
+
+interface TokenResult {
+  providerId: string;
+  token: any;
+}
+
+interface CreateOAuthRouterOptions {
+  providers?: OAuthProvider[];
+  store?: MemoryStore;
+  fetchFn?: typeof fetch;
+  onSuccess?: (req: Request, result: TokenResult) => void | Promise<void>;
+  onError?: (req: Request, error: any) => void | Promise<void>;
+}
+
+export interface OAuthRouter {
+  start: (req: Request, res: Response) => Promise<void>;
+  callback: (req: Request, res: Response) => Promise<void>;
+  status: (req: Request, res: Response) => Promise<void>;
+  deviceStart: (req: Request, res: Response) => Promise<void>;
+  devicePoll: (req: Request, res: Response) => Promise<void>;
+  store: MemoryStore;
+  providers: Map<string, OAuthProvider>;
 }
 
 export function createOAuthRouter({
@@ -147,10 +240,10 @@ export function createOAuthRouter({
   fetchFn = fetch,
   onSuccess,
   onError,
-} = {}) {
+}: CreateOAuthRouterOptions = {}): OAuthRouter {
   const providerMap = createProviderRegistry(providers);
 
-  async function handleStart(req, res) {
+  async function handleStart(req: Request, res: Response): Promise<void> {
     const providerId = String(req.params.provider || "").toLowerCase();
     const provider = providerMap.get(providerId);
     if (!provider) {
@@ -169,12 +262,12 @@ export function createOAuthRouter({
       providerId,
       verifier,
       redirectTarget,
-    });
+    } as StateEntry);
 
     const url = buildAuthUrl({
-      authorizeUrl: provider.authorizeUrl,
-      clientId: provider.clientId,
-      redirectUri: provider.redirectUri,
+      authorizeUrl: provider.authorizeUrl ?? "",
+      clientId: provider.clientId ?? "",
+      redirectUri: provider.redirectUri ?? "",
       scopes: provider.scopes,
       state,
       codeChallenge: challenge,
@@ -184,15 +277,15 @@ export function createOAuthRouter({
     res.redirect(url);
   }
 
-  async function handleCallback(req, res) {
+  async function handleCallback(req: Request, res: Response): Promise<void> {
     const { code, state, error, error_description } = req.query || {};
     if (error) {
-      onError?.(req, { error, error_description });
+      await onError?.(req, { error, error_description });
       res.status(400).json({ error, error_description });
       return;
     }
 
-    const cached = store.get(`state:${state}`);
+    const cached = store.get(`state:${state}`) as StateEntry | null;
     if (!cached) {
       res.status(400).json({ error: "Invalid or expired state." });
       return;
@@ -208,11 +301,11 @@ export function createOAuthRouter({
 
     try {
       const token = await exchangeToken({
-        tokenUrl: provider.tokenUrl,
-        code,
-        clientId: provider.clientId,
-        clientSecret: provider.clientSecret,
-        redirectUri: provider.redirectUri,
+        tokenUrl: provider.tokenUrl ?? "",
+        code: String(code),
+        clientId: provider.clientId ?? "",
+        clientSecret: provider.clientSecret ?? undefined,
+        redirectUri: provider.redirectUri ?? "",
         codeVerifier: cached.verifier,
         tokenAuthMethod: provider.tokenAuthMethod,
         extraTokenParams: provider.extraTokenParams,
@@ -223,13 +316,13 @@ export function createOAuthRouter({
 
       const redirectTo = cached.redirectTarget || "/";
       res.redirect(redirectTo);
-    } catch (err) {
-      onError?.(req, err);
+    } catch (err: any) {
+      await onError?.(req, err);
       res.status(500).json({ error: err.message || "Token exchange failed." });
     }
   }
 
-  async function handleStatus(req, res) {
+  async function handleStatus(req: Request, res: Response): Promise<void> {
     const providerId = String(req.params.provider || "").toLowerCase();
     const provider = providerMap.get(providerId);
     if (!provider) {
@@ -267,7 +360,7 @@ export function createOAuthRouter({
    *   for production).
    */
 
-  async function handleDeviceStart(req, res) {
+  async function handleDeviceStart(req: Request, res: Response): Promise<void> {
     const providerId = String(req.params.provider || "").toLowerCase();
     const provider = providerMap.get(providerId);
     if (!provider) {
@@ -283,12 +376,12 @@ export function createOAuthRouter({
     }
 
     try {
-      const params = new URLSearchParams({
-        client_id: provider.clientId,
-        scope: Array.isArray(provider.scopes)
-          ? provider.scopes.join(" ")
-          : provider.scopes || "",
-      });
+      const params = new URLSearchParams();
+      params.set("client_id", provider.clientId ?? "");
+      const scopeValue = Array.isArray(provider.scopes)
+        ? provider.scopes.join(" ")
+        : (provider.scopes ?? "");
+      params.set("scope", scopeValue);
 
       // If provider requires client_secret on device request (rare), attach it.
       if (provider.clientSecret && provider.tokenAuthMethod === "post") {
@@ -303,22 +396,18 @@ export function createOAuthRouter({
 
       if (!tokenRes.ok) {
         const text = await tokenRes.text().catch(() => "");
-        res
-          .status(502)
-          .json({
-            error: `Device authorization request failed: ${tokenRes.status}`,
-            details: text,
-          });
+        res.status(502).json({
+          error: `Device authorization request failed: ${tokenRes.status}`,
+          details: text,
+        });
         return;
       }
 
       const body = await tokenRes.json().catch(() => null);
       if (!body || !body.device_code) {
-        res
-          .status(502)
-          .json({
-            error: "Invalid device authorization response from provider.",
-          });
+        res.status(502).json({
+          error: "Invalid device authorization response from provider.",
+        });
         return;
       }
 
@@ -341,7 +430,7 @@ export function createOAuthRouter({
           verificationUriComplete: body.verification_uri_complete || null,
           interval: typeof body.interval === "number" ? body.interval : 5,
           expiresAt,
-        },
+        } as DeviceEntry,
         body.expires_in ? body.expires_in * 1000 : undefined,
       );
 
@@ -355,12 +444,12 @@ export function createOAuthRouter({
         expiresIn: body.expires_in || null,
         interval: body.interval || 5,
       });
-    } catch (err) {
+    } catch (err: any) {
       res.status(500).json({ error: err?.message || "Device start failed." });
     }
   }
 
-  async function handleDevicePoll(req, res) {
+  async function handleDevicePoll(req: Request, res: Response): Promise<void> {
     // Accept either query param or body param `key`
     const key = String(
       (req.query && req.query.key) || (req.body && req.body.key) || "",
@@ -370,7 +459,7 @@ export function createOAuthRouter({
       return;
     }
 
-    const entry = store.get(`device:${key}`);
+    const entry = store.get(`device:${key}`) as DeviceEntry | null;
     if (!entry) {
       res.status(404).json({ error: "Device flow not found or expired." });
       return;
@@ -394,12 +483,19 @@ export function createOAuthRouter({
       const params = new URLSearchParams({
         grant_type: "urn:ietf:params:oauth:grant-type:device_code",
         device_code: entry.deviceCode,
-        client_id: provider.clientId,
+        client_id: provider.clientId ?? "",
       });
 
       // If provider requires client_secret on token polling (post), attach it.
       if (provider.clientSecret && provider.tokenAuthMethod === "post") {
         params.set("client_secret", provider.clientSecret);
+      }
+
+      if (!provider.tokenUrl) {
+        res
+          .status(501)
+          .json({ error: "Token endpoint not configured for this provider." });
+        return;
       }
 
       const tokenRes = await fetchFn(provider.tokenUrl, {
@@ -461,7 +557,7 @@ export function createOAuthRouter({
         expiresIn: tokenBody?.expires_in || null,
       });
       return;
-    } catch (err) {
+    } catch (err: any) {
       res.status(500).json({ error: err?.message || "Device poll failed." });
       return;
     }
@@ -477,5 +573,3 @@ export function createOAuthRouter({
     providers: providerMap,
   };
 }
-
-export { MemoryStore };
