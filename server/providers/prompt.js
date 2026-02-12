@@ -44,15 +44,11 @@ export function buildGardenPrompt({
   sunOrientation,
   style = {},
   optimizationGoals = [
-    "Maximize space utilization - fill as much of each bed as possible",
-    "Plant as many vegetables as the space allows while respecting minimum spacing",
-    "Prioritize companion planting relationships to increase plant density",
-    "Use vertical and horizontal space efficiently - tall plants don't waste ground space",
-    "Fill gaps with small, fast-growing plants (radishes, lettuce, herbs)",
-    "Layer plantings by root depth - shallow, medium, and deep roots can coexist",
-    "Avoid leaving large empty spaces - if there's room for another plant, add it",
-    "Respect absolute minimums: spacing, bed boundaries, and plant size requirements",
-    "Favor strategic density over sparse layouts - gardens are most productive when full",
+    "Maximize density using Intensive Square Foot Gardening and Intercropping techniques",
+    "Use under-planting: shallow herbs (thyme, oregano) beneath tall plants (tomato, pepper)",
+    "Manage shade: tall vertical plants on appropriate edge to avoid casting shadows",
+    "Respect companion relationships (likes) and separate antagonists (dislikes)",
+    "Fill every available space with appropriate plant varieties",
   ],
 }) {
   const varieties = (seeds || []).flatMap(normalizeVariety);
@@ -112,40 +108,80 @@ export function buildGardenPrompt({
     },
   };
 
+  // Calculate priority-based variety distribution with target counts per bed
+  const totalPriority = varieties.reduce((sum, v) => sum + v.priority, 0);
+
+  // Build per-bed density targets and variety recipes
+  const bedRecipes = beds.map((bed) => {
+    const sqft = (bed.width * bed.height) / 144; // Convert sq inches to sq feet
+    // Target: 2.5-3 plants per square foot for intensive gardening
+    const targetMin = Math.ceil(sqft * 2.5);
+    const targetMax = Math.ceil(sqft * 3.5);
+
+    // Distribute plants across varieties by priority
+    const varietyRecipe = varieties.map((v) => {
+      const priorityRatio = v.priority / totalPriority;
+      const minCount = Math.max(1, Math.floor(targetMin * priorityRatio));
+      const maxCount = Math.ceil(targetMax * priorityRatio);
+
+      return {
+        veggieType: v.veggieType,
+        varietyName: v.varietyName,
+        spacing: v.spacing,
+        minCount,
+        maxCount,
+        priority: v.priority,
+      };
+    });
+
+    return {
+      bedId: bed.id,
+      bedName: bed.name,
+      dimensions: `${bed.width}×${bed.height}"`,
+      sqft: sqft.toFixed(1),
+      targetPlants: `${targetMin}-${targetMax}`,
+      recipe: varietyRecipe,
+    };
+  });
+
+  // Calculate shade management direction
+  const tallPlantEdge =
+    sunOrientation === "North"
+      ? "South"
+      : sunOrientation === "South"
+        ? "North"
+        : sunOrientation === "East"
+          ? "West"
+          : "East";
+
   const payload = {
     system,
     prompt: [
-      "Generate a JSON array of BedLayout objects.",
+      "You are an expert Horticultural Planner using Intensive Square Foot Gardening and Intercropping.",
       "",
-      `BED CONFIGURATIONS: ${JSON.stringify(beds || [])}`,
-      `ENVIRONMENT: Sun orientation is ${sunOrientation || "Unknown"}`,
+      "PLANTING RECIPES (MANDATORY COUNTS PER BED):",
+      JSON.stringify(bedRecipes, null, 2),
       "",
-      `PLANT VARIETIES TO USE: ${JSON.stringify(varieties)}`,
+      "GUILD RULES (Companions & Antagonists):",
+      JSON.stringify(guild),
       "",
-      `COMPANION PLANTING GUILD (likes/dislikes): ${JSON.stringify(guild)}`,
+      "CRITICAL REQUIREMENTS:",
+      "1. PLANT COUNTS: You MUST place the number of plants specified in each bed's recipe (minCount to maxCount per variety).",
+      '2. INTERCROPPING: Use under-planting - place small plants (Thyme 8", Oregano 12", Basil 10") beneath or between larger plants.',
+      `3. SHADE MANAGEMENT: Place tall plants (Tomato, Pepper) on the ${tallPlantEdge} edge to avoid shading others.`,
+      "4. COORDINATES: (x, y) are inches from top-left corner of the bed. Center of plant must be at least size/2 inches from all edges.",
+      "5. SPACING: Use the 'spacing' value as the plant's 'size' (canopy diameter). Plants can overlap slightly if root depths differ (shallow/medium/deep).",
+      "6. COMPANIONS: Cluster 'likes' together (Basil+Tomato, Marigold+Tomato), separate 'dislikes' when provided.",
+      "7. DENSITY: Fill the entire bed area - use staggered rows, triangular spacing, and multi-layer planting.",
       "",
-      `STYLE PREFERENCES: ${JSON.stringify(style)}`,
-      `OPTIMIZATION GOALS: ${JSON.stringify(optimizationGoals)}`,
+      "OUTPUT FORMAT:",
+      "Return JSON array: [{bedId, placements: [{id, veggieType, varietyName, x, y, size, placementReasoning, spacingAnalysis, companionInsights}]}]",
       "",
-      "REQUIREMENTS:",
-      "- MAXIMIZE DENSITY: Fill as much of each bed as possible with plants",
-      "- FILL GAPS: If there's space for another plant (considering spacing), add it",
-      "- LAYER BY DEPTH: Combine plants with different root depths (shallow/medium/deep)",
-      "- USE VERTICAL SPACE: Tall plants (tomatoes, kale) don't prevent ground crops (lettuce, radish)",
-      "- COMPANION PLANTING: Place compatible plants together to increase density safely",
-      "- All placements must stay within each bed's bounds (x, y, size)",
-      "- Respect minimum spacing requirements for each variety (critical constraint)",
-      "- Provide detailed reasoning for each placement decision",
-      "- Analyze spacing relative to immediate neighbors",
-      "- Explain specific companion planting benefits achieved",
-      "",
-      "SPACE UTILIZATION STRATEGY:",
-      "1. Start with large plants (tomatoes, zucchini, kale) - these define the structure",
-      "2. Fill medium spaces with medium plants (peppers, cucumbers)",
-      "3. Pack small plants (radish, lettuce, basil, carrots) into remaining gaps",
-      "4. Use vertical layering - tall plants with shallow-root understory plants",
-      "5. Check for wasted space - every 6-12 inch gap can fit something",
-      "6. Aim for 80-95% bed coverage while maintaining minimum spacing",
+      'EXAMPLE for a 48×48" bed with Tomato(24"), Basil(10"), Thyme(8"):',
+      "- 2 Tomatoes at edges for height",
+      "- 6-8 Basil tucked between tomatoes",
+      "- 8-12 Thyme in remaining gaps",
+      "= 16-22 plants total filling the space",
     ].join("\n"),
     schema,
   };
