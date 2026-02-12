@@ -1,10 +1,11 @@
 import React, { useState } from "react";
-import { GardenBed, BedLayout, PlantPlacement } from "../types";
-import { GRID_SIZE, INCHES_PER_GRID, VEGGIE_METADATA } from "../constants";
+import { GardenBed, BedLayout, PlantPlacement, PlantMeta } from "../types";
+import { GRID_SIZE, INCHES_PER_GRID } from "../constants";
 
 interface GardenBedViewProps {
   bed: GardenBed;
   layout?: BedLayout;
+  veggieMetadata: Record<string, PlantMeta>;
   onDragStart: (e: React.MouseEvent, id: string) => void;
   isSelected: boolean;
   onClick: () => void;
@@ -13,6 +14,7 @@ interface GardenBedViewProps {
 const GardenBedView: React.FC<GardenBedViewProps> = ({
   bed,
   layout,
+  veggieMetadata,
   onDragStart,
   isSelected,
   onClick,
@@ -43,13 +45,13 @@ const GardenBedView: React.FC<GardenBedViewProps> = ({
     const key = String(hoveredPlant.veggieType).trim();
     if (!key) return null;
     // Direct lookup (exact)
-    if (VEGGIE_METADATA[key]) return VEGGIE_METADATA[key];
+    if (veggieMetadata[key]) return veggieMetadata[key];
     // Title-case (Tomato, Basil)
     const title = key.charAt(0).toUpperCase() + key.slice(1).toLowerCase();
-    if (VEGGIE_METADATA[title]) return VEGGIE_METADATA[title];
+    if (veggieMetadata[title]) return veggieMetadata[title];
     // Lower-case fallback
     const lower = key.toLowerCase();
-    if (VEGGIE_METADATA[lower]) return VEGGIE_METADATA[lower];
+    if (veggieMetadata[lower]) return veggieMetadata[lower];
     return null;
   })();
 
@@ -162,7 +164,7 @@ const GardenBedView: React.FC<GardenBedViewProps> = ({
 
       {/* Inner Soil Area (Plants) - We use relative positioning here so tooltips can float above it */}
       <div
-        className="relative w-full h-full overflow-hidden"
+        className="relative w-full h-full"
         style={{ borderRadius: "inherit" }}
       >
         {layout?.placements.map((plant) => {
@@ -170,27 +172,33 @@ const GardenBedView: React.FC<GardenBedViewProps> = ({
           const plantTypeKey = String(plant.veggieType || "").trim();
           const meta = (() => {
             const defaultMeta = {
+              id: "plant_unknown",
               spacing: 6,
               height: 6,
+              width: 6,
+              rootWidth: 6,
               color: "#999999",
               icon: "🌱",
               companions: [],
               antagonists: [],
+              habit: "Unknown",
+              root: "Unknown",
             };
             if (!plantTypeKey) return defaultMeta;
-            if (VEGGIE_METADATA[plantTypeKey])
-              return VEGGIE_METADATA[plantTypeKey];
+            if (veggieMetadata[plantTypeKey])
+              return veggieMetadata[plantTypeKey];
             const title =
               plantTypeKey.charAt(0).toUpperCase() +
               plantTypeKey.slice(1).toLowerCase();
-            if (VEGGIE_METADATA[title]) return VEGGIE_METADATA[title];
+            if (veggieMetadata[title]) return veggieMetadata[title];
             const lower = plantTypeKey.toLowerCase();
-            if (VEGGIE_METADATA[lower]) return VEGGIE_METADATA[lower];
+            if (veggieMetadata[lower]) return veggieMetadata[lower];
             return defaultMeta;
           })();
 
           const spreadInches = plant.size || meta.spacing;
           const displaySizePx = (spreadInches / INCHES_PER_GRID) * GRID_SIZE;
+          // AI provides coordinates in inches directly, convert to pixels
           const pxX = (plant.x / INCHES_PER_GRID) * GRID_SIZE;
           const pxY = (plant.y / INCHES_PER_GRID) * GRID_SIZE;
 

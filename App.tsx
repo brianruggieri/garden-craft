@@ -8,11 +8,14 @@ import {
   BedShape,
   SeedVariety,
   AIProviderId,
+  PlantCatalog,
+  PlantMeta,
 } from "./types";
 import ControlPanel from "./components/ControlPanel";
 import GardenBedView from "./components/GardenBedView";
 import { generateGardenLayout } from "./services/geminiService";
-import { GRID_SIZE, VEGGIE_METADATA } from "./constants";
+import { fetchPlantCatalog } from "./services/catalogService";
+import { GRID_SIZE } from "./constants";
 
 const App: React.FC = () => {
   const [beds, setBeds] = useState<GardenBed[]>([
@@ -26,13 +29,7 @@ const App: React.FC = () => {
       shape: "rectangle",
     },
   ]);
-  const [seeds, setSeeds] = useState<Vegetable[]>(
-    Object.values(VeggieType).map((type) => ({
-      type,
-      priority: 3,
-      selectedVarieties: [],
-    })),
-  );
+  const [seeds, setSeeds] = useState<Vegetable[]>([]);
   const [sunOrientation, setSunOrientation] = useState<SunOrientation>("South");
   const [layouts, setLayouts] = useState<BedLayout[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -61,6 +58,9 @@ const App: React.FC = () => {
     expiresAt: number | null;
   } | null>(null);
   const [oauthChecking, setOauthChecking] = useState(false);
+  const [catalog, setCatalog] = useState<PlantCatalog | null>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
 
   useEffect(() => {
     const gardenKeys = Object.keys(localStorage).filter((k) =>
@@ -102,6 +102,57 @@ const App: React.FC = () => {
 
     loadProviders();
   }, []);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadCatalog = async () => {
+      setCatalogLoading(true);
+      setCatalogError(null);
+      try {
+        const data = await fetchPlantCatalog();
+        if (isActive) setCatalog(data);
+      } catch (err) {
+        if (isActive) {
+          setCatalogError(
+            err instanceof Error ? err.message : "Failed to load catalog",
+          );
+          setCatalog(null);
+        }
+      } finally {
+        if (isActive) setCatalogLoading(false);
+      }
+    };
+
+    loadCatalog();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const plantMetadata = (catalog?.plants || {}) as Record<string, PlantMeta>;
+  const seedVarieties = (catalog?.varieties || []) as SeedVariety[];
+  const veggieTypes = Object.keys(plantMetadata) as VeggieType[];
+  const didInitSeeds = useRef(false);
+
+  useEffect(() => {
+    if (didInitSeeds.current) return;
+    if (seeds.length > 0) {
+      didInitSeeds.current = true;
+      return;
+    }
+    if (veggieTypes.length > 0) {
+      setSeeds(
+        veggieTypes.map((type) => ({
+          type,
+          priority: 3,
+          selectedVarieties: [],
+        })),
+      );
+      didInitSeeds.current = true;
+    }
+  }, [seeds.length, veggieTypes]);
 
   useEffect(() => {
     let isActive = true;
@@ -403,6 +454,9 @@ const App: React.FC = () => {
         seeds={seeds}
         sunOrientation={sunOrientation}
         layouts={layouts}
+        veggieMetadata={plantMetadata}
+        seedVarieties={seedVarieties}
+        veggieTypes={veggieTypes}
         onAddBed={handleAddBed}
         onRemoveBed={handleRemoveBed}
         onUpdateSeed={handleUpdateSeed}
@@ -435,6 +489,16 @@ const App: React.FC = () => {
       />
 
       <main className="flex-1 relative flex flex-col overflow-hidden">
+        {catalogLoading && (
+          <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-xs font-bold px-4 py-2">
+            Loading plant catalog...
+          </div>
+        )}
+        {catalogError && (
+          <div className="bg-red-50 border-b border-red-200 text-red-700 text-xs font-bold px-4 py-2">
+            {catalogError}
+          </div>
+        )}
         {/* Optimized Context Bar with High Contrast */}
         <div className="bg-white border-b border-slate-300 p-4 flex justify-between items-center z-30 shadow-md">
           <div className="flex gap-8 items-center">
@@ -594,11 +658,13 @@ const App: React.FC = () => {
                 key={bed.id}
                 bed={bed}
                 layout={layouts.find((l) => l.bedId === bed.id)}
+                veggieMetadata={plantMetadata}
                 onDragStart={onBedDragStart}
                 isSelected={selectedBedId === bed.id}
                 onClick={() => setSelectedBedId(bed.id)}
               />
             ))}
+
           </div>
 
           <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white p-2.5 rounded-2xl shadow-2xl border-2 border-slate-300 z-40">
@@ -664,11 +730,12 @@ const App: React.FC = () => {
         </div>
 
         <div className="bg-white border-t border-slate-300 p-4 flex flex-wrap gap-5 justify-center z-30 shadow-inner">
-          {Object.entries(VeggieType).map(([key, value]) => {
-            const meta = VEGGIE_METADATA[value];
+          {veggieTypes.map((value) => {
+            const meta = plantMetadata[value];
+            if (!meta) return null;
             return (
               <div
-                key={key}
+                key={value}
                 className="flex items-center gap-2 group cursor-default"
               >
                 <div

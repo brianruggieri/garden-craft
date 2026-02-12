@@ -6,14 +6,17 @@ import {
   SunOrientation,
   SeedVariety,
   BedLayout,
+  PlantMeta,
 } from "../types";
-import { SEED_VARIETY_LIBRARY, VEGGIE_METADATA } from "../constants";
 
 interface ControlPanelProps {
   beds: GardenBed[];
   seeds: Vegetable[];
   sunOrientation: SunOrientation;
   layouts: BedLayout[];
+  veggieMetadata: Record<string, PlantMeta>;
+  seedVarieties: SeedVariety[];
+  veggieTypes: VeggieType[];
   onAddBed: () => void;
   onRemoveBed: (id: string) => void;
   onUpdateSeed: (type: VeggieType, priority: number) => void;
@@ -45,6 +48,9 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   seeds,
   sunOrientation,
   layouts,
+  veggieMetadata,
+  seedVarieties,
+  veggieTypes,
   onAddBed,
   onRemoveBed,
   onUpdateSeed,
@@ -623,11 +629,12 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 Priority
               </h2>
               <div className="space-y-6">
-                {Object.values(VeggieType).map((vType) => {
+                {veggieTypes.map((vType) => {
                   const seed = seeds.find((s) => s.type === vType);
                   const priority = seed?.priority || 0;
                   const selectedCount = seed?.selectedVarieties.length || 0;
                   const isEditing = editingVarieties === vType;
+                  const meta = veggieMetadata[vType];
 
                   return (
                     <div
@@ -637,7 +644,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                       <div className="flex justify-between items-center mb-2">
                         <div className="flex items-center gap-2">
                           <span className="text-lg">
-                            {VEGGIE_METADATA[vType].icon}
+                            {meta?.icon || "🌱"}
                           </span>
                           <span className="text-xs font-bold text-slate-700">
                             {vType}
@@ -679,7 +686,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                           <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">
                             Select Actual Varieties
                           </p>
-                          {SEED_VARIETY_LIBRARY.filter(
+                          {seedVarieties.filter(
                             (v) => v.type === vType,
                           ).map((variety) => {
                             const isSelected = seed?.selectedVarieties.some(
