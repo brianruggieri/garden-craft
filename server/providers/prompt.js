@@ -9,7 +9,10 @@ const DEFAULT_SYSTEM = [
 
 function normalizeVariety(veg) {
   const meta = VEGGIE_METADATA[veg.type] || {};
-  if (Array.isArray(veg.selectedVarieties) && veg.selectedVarieties.length > 0) {
+  if (
+    Array.isArray(veg.selectedVarieties) &&
+    veg.selectedVarieties.length > 0
+  ) {
     return veg.selectedVarieties.map((sv) => ({
       veggieType: sv.type || veg.type,
       varietyName: sv.name,
@@ -65,12 +68,31 @@ export function buildGardenPrompt({
               id: { type: "string" },
               veggieType: { type: "string", enum: VEGGIE_TYPES },
               varietyName: { type: "string" },
-              x: { type: "number" },
-              y: { type: "number" },
-              size: { type: "number" },
-              placementReasoning: { type: "string" },
-              spacingAnalysis: { type: "string" },
-              companionInsights: { type: "string" },
+              x: {
+                type: "number",
+                description: "Inches from bed left edge",
+              },
+              y: {
+                type: "number",
+                description: "Inches from bed top edge",
+              },
+              size: {
+                type: "number",
+                description: "Diameter of the plant canopy in inches",
+              },
+              placementReasoning: {
+                type: "string",
+                description: "Why this plant is in this specific spot",
+              },
+              spacingAnalysis: {
+                type: "string",
+                description: "How it relates to its immediate neighbors",
+              },
+              companionInsights: {
+                type: "string",
+                description:
+                  "Specific companion planting benefit achieved here",
+              },
             },
             required: ["id", "veggieType", "varietyName", "x", "y", "size"],
           },
@@ -84,13 +106,24 @@ export function buildGardenPrompt({
     system,
     prompt: [
       "Generate a JSON array of BedLayout objects.",
-      `BED CONFIGS: ${JSON.stringify(beds || [])}`,
-      `ENV: SunOrientation ${sunOrientation || "Unknown"}`,
-      `VARIETIES: ${JSON.stringify(varieties)}`,
-      `GUILD: ${JSON.stringify(guild)}`,
-      `STYLE: ${JSON.stringify(style)}`,
-      `GOALS: ${JSON.stringify(optimizationGoals)}`,
-      "Ensure all placements stay within each bed's bounds.",
+      "",
+      `BED CONFIGURATIONS: ${JSON.stringify(beds || [])}`,
+      `ENVIRONMENT: Sun orientation is ${sunOrientation || "Unknown"}`,
+      "",
+      `PLANT VARIETIES TO USE: ${JSON.stringify(varieties)}`,
+      "",
+      `COMPANION PLANTING GUILD (likes/dislikes): ${JSON.stringify(guild)}`,
+      "",
+      `STYLE PREFERENCES: ${JSON.stringify(style)}`,
+      `OPTIMIZATION GOALS: ${JSON.stringify(optimizationGoals)}`,
+      "",
+      "REQUIREMENTS:",
+      "- All placements must stay within each bed's bounds (x, y, size)",
+      "- Respect minimum spacing requirements for each variety",
+      "- Consider companion planting relationships (likes/dislikes)",
+      "- Provide detailed reasoning for each placement decision",
+      "- Analyze spacing relative to immediate neighbors",
+      "- Explain specific companion planting benefits achieved",
     ].join("\n"),
     schema,
   };

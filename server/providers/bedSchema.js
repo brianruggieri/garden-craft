@@ -25,27 +25,40 @@ export function buildOpenAISchema() {
   const placementItem = {
     type: "object",
     properties: {
-      id: { type: "string" },
+      id: {
+        type: "string",
+        description: "Unique identifier for this placement",
+      },
       veggieType: {
         type: "string",
+        description: "Type of vegetable being planted",
         // Use enum for better model guidance
         ...(Array.isArray(VEGGIE_TYPES) && VEGGIE_TYPES.length > 0
           ? { enum: VEGGIE_TYPES }
           : {}),
       },
-      varietyName: { type: "string" },
-      x: { type: "number" },
-      y: { type: "number" },
-      size: { type: "number" },
+      varietyName: {
+        type: "string",
+        description: "Specific variety or cultivar name",
+      },
+      x: { type: "number", description: "Inches from bed left edge" },
+      y: { type: "number", description: "Inches from bed top edge" },
+      size: {
+        type: "number",
+        description: "Diameter of the plant canopy in inches",
+      },
       // Optional fields use null unions (OpenAI requirement)
       placementReasoning: {
         anyOf: [{ type: "string" }, { type: "null" }],
+        description: "Why this plant is in this specific spot",
       },
       spacingAnalysis: {
         anyOf: [{ type: "string" }, { type: "null" }],
+        description: "How it relates to its immediate neighbors",
       },
       companionInsights: {
         anyOf: [{ type: "string" }, { type: "null" }],
+        description: "Specific companion planting benefit achieved here",
       },
     },
     required: [
@@ -65,9 +78,13 @@ export function buildOpenAISchema() {
   const bedItem = {
     type: "object",
     properties: {
-      bedId: { type: "string" },
+      bedId: {
+        type: "string",
+        description: "Identifier matching the garden bed this layout is for",
+      },
       placements: {
         type: "array",
+        description: "Array of plant placements within this bed",
         items: placementItem,
       },
     },
@@ -81,6 +98,7 @@ export function buildOpenAISchema() {
     properties: {
       layouts: {
         type: "array",
+        description: "Array of layouts, one per garden bed",
         items: bedItem,
       },
     },
@@ -107,7 +125,10 @@ export function buildAnthropicSchema() {
   const placementItem = {
     type: "object",
     properties: {
-      id: { type: "string" },
+      id: {
+        type: "string",
+        description: "Unique identifier for this placement",
+      },
       veggieType: {
         type: "string",
         description: "Type of vegetable being planted",
@@ -117,36 +138,36 @@ export function buildAnthropicSchema() {
       },
       varietyName: {
         type: "string",
-        description: "Specific variety name",
+        description: "Specific variety or cultivar name",
       },
       x: {
         type: "number",
-        description: "X coordinate in inches",
+        description: "Inches from bed left edge",
         minimum: 0,
       },
       y: {
         type: "number",
-        description: "Y coordinate in inches",
+        description: "Inches from bed top edge",
         minimum: 0,
       },
       size: {
         type: "number",
-        description: "Plant size/spacing in inches",
+        description: "Diameter of the plant canopy in inches",
         minimum: 1,
         maximum: 120,
       },
       // Optional fields - Anthropic allows truly optional fields
       placementReasoning: {
         type: "string",
-        description: "Explanation for this placement decision",
+        description: "Why this plant is in this specific spot",
       },
       spacingAnalysis: {
         type: "string",
-        description: "Analysis of spacing requirements",
+        description: "How it relates to its immediate neighbors",
       },
       companionInsights: {
         type: "string",
-        description: "Companion planting insights",
+        description: "Specific companion planting benefit achieved here",
       },
     },
     required: ["id", "veggieType", "varietyName", "x", "y", "size"],
@@ -158,11 +179,11 @@ export function buildAnthropicSchema() {
     properties: {
       bedId: {
         type: "string",
-        description: "Identifier for the garden bed",
+        description: "Identifier matching the garden bed this layout is for",
       },
       placements: {
         type: "array",
-        description: "Plant placements within this bed",
+        description: "Array of plant placements within this bed",
         items: placementItem,
         minItems: 0,
       },
