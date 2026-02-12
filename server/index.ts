@@ -1,12 +1,12 @@
 import { config } from "dotenv";
 import express from "express";
-import { getProvider, listProviders } from "./providers/index.js";
-import { createOAuthRouter } from "./oauth/index.js";
-import { loadOAuthProviders } from "./oauth/providers.js";
-import { createMcpSseRouter } from "./mcp/sseRouter.js";
-import { getPlantCatalog } from "./plantCatalogRepo.js";
-import { createOptimizeHandler } from "./routes/optimize.js";
-import { validateOptimize } from "./middleware/validation.js";
+import { getProvider, listProviders } from "./providers/index";
+import { createOAuthRouter } from "./oauth/index";
+import { loadOAuthProviders } from "./oauth/providers";
+import { createMcpSseRouter } from "./mcp/sseRouter";
+import { getPlantCatalog } from "./plantCatalogRepo";
+import { createOptimizeHandler } from "./routes/optimize";
+import { validateOptimize } from "./middleware/validation";
 
 // Load .env file if it exists
 config();
@@ -30,6 +30,15 @@ app.use((req, res, next) => {
   next();
 });
 
+interface TokenEntry {
+  accessToken: string;
+  tokenType?: string | null;
+  scopes?: string | null;
+  hasRefreshToken?: boolean;
+  receivedAt?: number;
+  expiresAt?: number | null;
+}
+
 /**
  * In-memory token store (single-instance, dev-friendly).
  * For production, replace with a durable, per-user, encrypted store.
@@ -39,7 +48,7 @@ app.use((req, res, next) => {
  * - We intentionally avoid logging token contents anywhere.
  * - The stored shape intentionally separates raw token material from public metadata.
  */
-const oauthTokenStore = new Map();
+const oauthTokenStore = new Map<string, TokenEntry>();
 
 // Load OAuth provider configurations
 const oauthProviders = loadOAuthProviders(process.env, {
@@ -54,7 +63,7 @@ const oauthProviders = loadOAuthProviders(process.env, {
  */
 const oauthRouter = createOAuthRouter({
   providers: oauthProviders,
-  onSuccess: async (req, { providerId, token }) => {
+  onSuccess: async (req, { providerId, token }: any) => {
     const receivedAt = Date.now();
     const expiresInMs =
       typeof token?.expires_in === "number" ? token.expires_in * 1000 : null;
@@ -68,7 +77,7 @@ const oauthRouter = createOAuthRouter({
       expiresAt: expiresInMs ? receivedAt + expiresInMs : null,
     });
   },
-  onError: async (req, err) => {
+  onError: async (req, err: any) => {
     console.error("OAuth error during provider flow");
   },
 });
