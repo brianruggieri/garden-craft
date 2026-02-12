@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadOAuthProviders } from "../../oauth/providers.js";
+import { loadOAuthProviders } from "../../../oauth/providers.js";
 
 test("loadOAuthProviders loads OpenAI provider config from env", () => {
   const env = {

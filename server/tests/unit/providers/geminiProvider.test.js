@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   geminiProvider,
   buildGeminiSchema,
-} from "../../providers/geminiProvider.js";
+} from "../../../providers/geminiProvider.js";
 
 /**
  * Unit tests for the Gemini provider.

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   anthropicProvider,
   buildAnthropicSchema,
-} from "../../providers/anthropicProvider.js";
+} from "../../../providers/anthropicProvider.js";
 
 /**
  * Unit tests for the Anthropic provider.

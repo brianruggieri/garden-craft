@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "server": "node server/index.js",
     "dev:server": "node --watch server/index.js",
-    "test": "node --test server/tests/oauthRouter.test.js server/tests/gemini/geminiProvider.test.js server/tests/openai/openaiProvider.test.js server/tests/oauth/loadProviders.test.js server/tests/device/deviceFlow.test.js"
+    "test": "node --test \"server/tests/unit/**/*.test.js\"",
+    "test:unit": "node --test \"server/tests/unit/**/*.test.js\"",
+    "test:integration": "RUN_INTEGRATION=1 node --test \"server/tests/integration/**/*.test.js\"",
+    "test:all": "node --test \"server/tests/**/*.test.js\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.61.0",

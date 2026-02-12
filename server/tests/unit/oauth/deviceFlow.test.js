@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createOAuthRouter, MemoryStore } from "../../oauth/index.js";
+import { createOAuthRouter, MemoryStore } from "../../../oauth/index.js";
 
 /**
  * Unit tests for the Device Authorization (RFC 8628) flow.
@@ -215,11 +215,25 @@ test("device poll returns pending then connected and calls onSuccess", async () 
   const p2 = pollRes2._getPayload();
   assert.ok(p2, "Expected payload for second poll");
   assert.strictEqual(p2.status, "connected", "Second poll should be connected");
-  assert.ok(onSuccessCalled, "onSuccess should have been invoked for successful poll");
-  assert.strictEqual(captured?.providerId, "openai", "onSuccess called with correct providerId");
-  assert.ok(captured?.token?.access_token, "Token object should include access_token");
+  assert.ok(
+    onSuccessCalled,
+    "onSuccess should have been invoked for successful poll",
+  );
+  assert.strictEqual(
+    captured?.providerId,
+    "openai",
+    "onSuccess called with correct providerId",
+  );
+  assert.ok(
+    captured?.token?.access_token,
+    "Token object should include access_token",
+  );
 
   // After successful poll, the device entry must be removed from the store
   const storedAfter = router.store.get(`device:${key}`);
-  assert.strictEqual(storedAfter, null, "Device flow entry should be removed after success");
+  assert.strictEqual(
+    storedAfter,
+    null,
+    "Device flow entry should be removed after success",
+  );
 });
