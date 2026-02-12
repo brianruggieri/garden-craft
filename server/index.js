@@ -5,6 +5,9 @@ import { createOAuthRouter } from "./oauth/index.js";
 import { loadOAuthProviders } from "./oauth/providers.js";
 import { createMcpSseRouter } from "./mcp/sseRouter.js";
 import { VEGGIE_METADATA } from "./veggieMetadata.js";
+import { getPlantCatalog } from "./plantCatalogRepo.js";
+import { ForceDirectedGardenPacker } from "./packer/ForceDirectedGardenPacker.js";
+import { HierarchicalCirclePacker } from "./packer/HierarchicalCirclePacker.js";
 
 // Load .env file if it exists
 config();
@@ -99,6 +102,18 @@ app.get("/api/providers", (req, res) => {
   res.json({
     providers: listProviders(),
   });
+});
+
+/**
+ * Plant catalog for client UI.
+ */
+app.get("/api/catalog", async (req, res) => {
+  try {
+    const catalog = await getPlantCatalog();
+    res.json(catalog);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load plant catalog" });
+  }
 });
 
 /**
@@ -220,6 +235,8 @@ app.post("/oauth/:provider/disconnect", (req, res) => {
 
 /**
  * Main optimization endpoint.
+ * Now uses algorithmic packer by default for reliable, dense layouts.
+ * Set usePacker: false to use legacy LLM-coordinate approach.
  */
 app.post("/api/optimize", async (req, res) => {
   try {
@@ -232,7 +249,156 @@ app.post("/api/optimize", async (req, res) => {
       optimizationGoals,
       auth,
       model,
+      usePacker = true, // Default to packer for better results
     } = req.body || {};
+
+    // Use packer approach for better reliability
+    if (usePacker && providerId !== "local") {
+      try {
+        const oauthTokenEntry = oauthTokenStore.get(
+          String(providerId).toLowerCase(),
+        );
+
+        const resolvedAuth =
+          auth ??
+          (oauthTokenEntry?.accessToken
+            ? {
+                oauthAccessToken: oauthTokenEntry.accessToken,
+              }
+            : undefined);
+
+        // Phase 1: Get semantic plan from LLM
+        const semanticPrompt = buildSemanticPlanPrompt({
+          beds,
+          seeds,
+          sunOrientation,
+          style,
+          optimizationGoals,
+        });
+
+        console.log("[SemanticPlanner] Requesting plant selection from LLM...");
+
+        // Direct LLM call without schema validation
+        let llmResponse;
+        if (providerId === "openai") {
+          const OpenAI = (await import("openai")).default;
+          const apiKey =
+            resolvedAuth?.apiKey ||
+            resolvedAuth?.oauthAccessToken ||
+            process.env.OPENAI_API_KEY;
+          if (!apiKey) throw new Error("OpenAI API key missing");
+          const client = new OpenAI({ apiKey });
+
+          const response = await client.chat.completions.create({
+            model: model || "gpt-4o",
+            messages: [
+              { role: "system", content: semanticPrompt.system },
+              { role: "user", content: semanticPrompt.prompt },
+            ],
+            response_format: { type: "json_object" },
+          });
+
+          llmResponse = response.choices[0]?.message?.content || "{}";
+        } else if (providerId === "anthropic") {
+          const Anthropic = (await import("@anthropic-ai/sdk")).default;
+          const apiKey =
+            resolvedAuth?.apiKey ||
+            resolvedAuth?.oauthAccessToken ||
+            process.env.ANTHROPIC_API_KEY;
+          if (!apiKey) throw new Error("Anthropic API key missing");
+          const client = new Anthropic({ apiKey });
+
+          const response = await client.messages.create({
+            model: model || "claude-3-5-sonnet-20241022",
+            max_tokens: 2048,
+            system: semanticPrompt.system,
+            messages: [{ role: "user", content: semanticPrompt.prompt }],
+          });
+
+          llmResponse = response.content?.[0]?.text || "{}";
+        } else if (providerId === "gemini") {
+          const { GoogleGenAI } = await import("@google/generative-ai");
+          const apiKey = resolvedAuth?.apiKey || process.env.GEMINI_API_KEY;
+          if (!apiKey) throw new Error("Gemini API key missing");
+          const client = new GoogleGenAI(apiKey);
+          const aiModel = client.models.getGenerativeModel({
+            model: model || "gemini-2.0-flash-exp",
+          });
+
+          const response = await aiModel.generateContent({
+            contents: [semanticPrompt.system, semanticPrompt.prompt].join(
+              "\n\n",
+            ),
+            config: { responseMimeType: "application/json" },
+          });
+
+          llmResponse = response?.text ?? "{}";
+        } else {
+          throw new Error(`Provider ${providerId} not supported for packer`);
+        }
+
+        // Parse semantic plan
+        const semanticPlan = parseSemanticPlan(llmResponse, beds);
+        console.log(
+          `[SemanticPlanner] LLM selected ${semanticPlan.beds.reduce((sum, b) => sum + b.plants.reduce((s, p) => s + p.count, 0), 0)} total plants`,
+        );
+
+        // Phase 2: Pack plants algorithmically
+        const layouts = [];
+
+        for (const bedPlan of semanticPlan.beds) {
+          const bed = beds.find((b) => b.id === bedPlan.bedId);
+          if (!bed) {
+            console.warn(`[Packer] Bed ${bedPlan.bedId} not found, skipping`);
+            continue;
+          }
+
+          console.log(
+            `[Packer] Packing ${bedPlan.plants.length} plant types into bed ${bed.name}...`,
+          );
+
+          const packer = new GardenPacker(bed, {
+            sunOrientation,
+            padding: 0.5,
+            allowRootOverlap: true,
+            companionProximity: 12,
+          });
+
+          const packerInput = convertPlanToPackerFormat({
+            beds: [bedPlan],
+          });
+
+          const result = packer.packPlants(packerInput[0].plants);
+
+          console.log(
+            `[Packer] Placed ${result.stats.placed}/${result.stats.placed + result.stats.failed} plants (${result.stats.successRate} success)`,
+          );
+          console.log(
+            `[Packer] Packing density: ${result.stats.packingDensity} of bed area`,
+          );
+
+          if (result.failedPlants.length > 0) {
+            console.warn(
+              `[Packer] Failed to place: ${result.failedPlants.map((p) => p.veggieType).join(", ")}`,
+            );
+          }
+
+          layouts.push({
+            bedId: bed.id,
+            placements: result.placements,
+          });
+        }
+
+        return res.json({
+          provider: providerId,
+          layouts,
+        });
+      } catch (err) {
+        console.error("[Packer] Error:", err);
+        console.log("[Packer] Falling back to legacy LLM-coordinate approach");
+        // Fall through to legacy approach below
+      }
+    }
 
     const provider = getProvider(providerId);
     if (!provider) {
@@ -265,6 +431,49 @@ app.post("/api/optimize", async (req, res) => {
       auth: resolvedAuth,
       model,
     });
+
+    // Validate bounds for diagnostic purposes (logs only, doesn't block)
+    if (Array.isArray(rawLayouts) && Array.isArray(beds)) {
+      rawLayouts.forEach((layout) => {
+        const bed = beds.find((b) => b.id === layout.bedId);
+        if (!bed || !Array.isArray(layout.placements)) return;
+
+        const violations = [];
+        layout.placements.forEach((plant) => {
+          const radius = (plant.size || 0) / 2;
+          const leftEdge = plant.x - radius;
+          const rightEdge = plant.x + radius;
+          const topEdge = plant.y - radius;
+          const bottomEdge = plant.y + radius;
+
+          if (
+            leftEdge < 0 ||
+            rightEdge > bed.width ||
+            topEdge < 0 ||
+            bottomEdge > bed.height
+          ) {
+            violations.push({
+              veggieType: plant.veggieType,
+              center: `(${plant.x}", ${plant.y}")`,
+              size: `${plant.size}"`,
+              bounds: `x:[${leftEdge.toFixed(1)}, ${rightEdge.toFixed(1)}], y:[${topEdge.toFixed(1)}, ${bottomEdge.toFixed(1)}]`,
+              bedBounds: `x:[0, ${bed.width}], y:[0, ${bed.height}]`,
+            });
+          }
+        });
+
+        if (violations.length > 0) {
+          console.warn(
+            `⚠️  Bounds violations detected in bed "${bed.name || bed.id}" (${bed.width}" × ${bed.height}"):`,
+          );
+          violations.forEach((v) => {
+            console.warn(
+              `   ${v.veggieType} @ ${v.center} size:${v.size} extends to ${v.bounds} (bed: ${v.bedBounds})`,
+            );
+          });
+        }
+      });
+    }
 
     // Normalize provider responses: ensure placements use canonical veggie types
     // based on server-side VEGGIE_METADATA and accept provider aliases such as
@@ -387,6 +596,441 @@ app.post("/api/optimize", async (req, res) => {
     console.error("Optimize error:", err);
     res.status(500).json({
       error: err.message || "Optimization failed.",
+    });
+  }
+});
+
+/**
+ * Algorithmic packer endpoint - uses semantic planning + circle packing
+ *
+ * Two-phase approach:
+ * 1. LLM generates semantic plan (WHAT plants, HOW MANY, WHY)
+ * 2. Circle packer algorithm determines WHERE (coordinates)
+ *
+ * This is deterministic, guaranteed to produce valid layouts, and much more
+ * reliable than asking LLMs to do spatial math.
+ */
+app.post("/api/optimize-packer", async (req, res) => {
+  try {
+    const {
+      provider: providerId = "openai",
+      beds,
+      seeds,
+      sunOrientation,
+      style,
+      optimizationGoals,
+      auth,
+      model,
+      usePacker = true, // Toggle to compare with old approach
+    } = req.body || {};
+
+    if (!usePacker) {
+      // Fall back to old LLM-coordinate approach
+      return res.redirect(307, "/api/optimize");
+    }
+
+    const provider = getProvider(providerId);
+    if (!provider) {
+      res.status(400).json({ error: "Unknown provider." });
+      return;
+    }
+
+    const oauthTokenEntry = oauthTokenStore.get(
+      String(providerId).toLowerCase(),
+    );
+
+    const resolvedAuth =
+      auth ??
+      (oauthTokenEntry?.accessToken
+        ? {
+            oauthAccessToken: oauthTokenEntry.accessToken,
+          }
+        : undefined);
+
+    // Phase 1: Get semantic plan from LLM (plant selection + quantities)
+    const semanticPrompt = buildSemanticPlanPrompt({
+      beds,
+      seeds,
+      sunOrientation,
+      style,
+      optimizationGoals,
+    });
+
+    console.log("[SemanticPlanner] Requesting plant selection from LLM...");
+
+    // For the packer endpoint, we bypass the provider's generateLayout method
+    // and call the LLM directly without schema validation, since semantic planner
+    // uses a different schema than the standard layout schema.
+    let llmResponse;
+
+    // Direct LLM call based on provider type
+    if (providerId === "openai") {
+      const OpenAI = (await import("openai")).default;
+      const apiKey =
+        resolvedAuth?.apiKey ||
+        resolvedAuth?.oauthAccessToken ||
+        process.env.OPENAI_API_KEY;
+      if (!apiKey) {
+        throw new Error("OpenAI API key missing");
+      }
+      const client = new OpenAI({ apiKey });
+
+      const response = await client.chat.completions.create({
+        model: model || "gpt-4o",
+        messages: [
+          { role: "system", content: semanticPrompt.system },
+          { role: "user", content: semanticPrompt.prompt },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      llmResponse = response.choices[0]?.message?.content || "{}";
+    } else if (providerId === "anthropic") {
+      const Anthropic = (await import("@anthropic-ai/sdk")).default;
+      const apiKey =
+        resolvedAuth?.apiKey ||
+        resolvedAuth?.oauthAccessToken ||
+        process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        throw new Error("Anthropic API key missing");
+      }
+      const client = new Anthropic({ apiKey });
+
+      const response = await client.messages.create({
+        model: model || "claude-3-5-sonnet-20241022",
+        max_tokens: 2048,
+        system: semanticPrompt.system,
+        messages: [{ role: "user", content: semanticPrompt.prompt }],
+      });
+
+      llmResponse = response.content?.[0]?.text || "{}";
+    } else if (providerId === "gemini") {
+      const { GoogleGenAI } = await import("@google/generative-ai");
+      const apiKey = resolvedAuth?.apiKey || process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error("Gemini API key missing");
+      }
+      const client = new GoogleGenAI(apiKey);
+      const aiModel = client.models.getGenerativeModel({
+        model: model || "gemini-2.0-flash-exp",
+      });
+
+      const response = await aiModel.generateContent({
+        contents: [semanticPrompt.system, semanticPrompt.prompt].join("\n\n"),
+        config: { responseMimeType: "application/json" },
+      });
+
+      llmResponse = response?.text ?? "{}";
+    } else {
+      throw new Error(
+        `Provider ${providerId} not supported for packer endpoint`,
+      );
+    }
+
+    // Debug logging
+    console.log(
+      "[SemanticPlanner] Raw LLM response:",
+      llmResponse.substring(0, 500),
+    );
+
+    // Parse and validate semantic plan
+    const semanticPlan = parseSemanticPlan(llmResponse, beds);
+    console.log(
+      `[SemanticPlanner] LLM selected ${semanticPlan.beds.reduce((sum, b) => sum + b.plants.reduce((s, p) => s + p.count, 0), 0)} total plants`,
+    );
+
+    // Phase 2: Use circle packer to place plants algorithmically
+    const layouts = [];
+
+    for (const bedPlan of semanticPlan.beds) {
+      const bed = beds.find((b) => b.id === bedPlan.bedId);
+      if (!bed) {
+        console.warn(`[Packer] Bed ${bedPlan.bedId} not found, skipping`);
+        continue;
+      }
+
+      console.log(
+        `[Packer] Packing ${bedPlan.plants.length} plant types into bed ${bed.name}...`,
+      );
+
+      const packer = new GardenPacker(bed, {
+        sunOrientation,
+        padding: 0.5,
+        allowRootOverlap: true,
+        companionProximity: 12,
+      });
+
+      // Convert semantic plan to packer format
+      const packerInput = convertPlanToPackerFormat({
+        beds: [bedPlan],
+      });
+
+      // Pack plants
+      const result = packer.packPlants(packerInput[0].plants);
+
+      console.log(
+        `[Packer] Placed ${result.stats.placed}/${result.stats.placed + result.stats.failed} plants (${result.stats.successRate} success)`,
+      );
+      console.log(
+        `[Packer] Packing density: ${result.stats.packingDensity} of bed area`,
+      );
+
+      if (result.failedPlants.length > 0) {
+        console.warn(
+          `[Packer] Failed to place: ${result.failedPlants.map((p) => p.veggieType).join(", ")}`,
+        );
+      }
+
+      layouts.push({
+        bedId: bed.id,
+        placements: result.placements,
+        strategy: bedPlan.strategy,
+        stats: result.stats,
+      });
+    }
+
+    res.json({
+      provider: provider.id,
+      method: "algorithmic-packer",
+      semanticPlan: {
+        overallReasoning: semanticPlan.overallReasoning,
+        beds: semanticPlan.beds.map((b) => ({
+          bedId: b.bedId,
+          plantCount: b.plants.reduce((sum, p) => sum + p.count, 0),
+          strategy: b.strategy,
+        })),
+      },
+      layouts,
+    });
+  } catch (err) {
+    console.error("[Packer] Error:", err);
+    res.status(500).json({
+      error: err.message || "Packer optimization failed.",
+    });
+  }
+});
+
+/**
+ * Hierarchical force-directed packer endpoint - Advanced two-level clustering
+ *
+ * Uses force-directed layout with hierarchical clustering:
+ * 1. Groups plants by type into clusters
+ * 2. Packs cluster meta-circles using force simulation (attraction/repulsion)
+ * 3. Packs individual plants within each cluster boundary
+ * 4. Applies Lloyd relaxation for refinement
+ *
+ * Features:
+ * - Tunable force parameters (intra_group_attraction, inter_group_repulsion, etc.)
+ * - Deterministic seeded randomness
+ * - Visual plant-type clustering
+ * - Companion plant proximity
+ * - Antagonist separation
+ */
+app.post("/api/optimize-hierarchical", async (req, res) => {
+  try {
+    const {
+      provider: providerId = "openai",
+      beds,
+      seeds,
+      sunOrientation,
+      style,
+      optimizationGoals,
+      auth,
+      model,
+      // Force-directed packing configuration
+      config = {},
+    } = req.body || {};
+
+    const provider = getProvider(providerId);
+    if (!provider) {
+      res.status(400).json({ error: "Unknown provider." });
+      return;
+    }
+
+    const oauthTokenEntry = oauthTokenStore.get(
+      String(providerId).toLowerCase(),
+    );
+
+    const resolvedAuth =
+      auth ??
+      (oauthTokenEntry?.accessToken
+        ? {
+            oauthAccessToken: oauthTokenEntry.accessToken,
+          }
+        : undefined);
+
+    // Phase 1: Get semantic plan from LLM (plant selection + quantities)
+    const semanticPrompt = buildSemanticPlanPrompt({
+      beds,
+      seeds,
+      sunOrientation,
+      style,
+      optimizationGoals,
+    });
+
+    console.log("[HierarchicalPacker] Requesting plant selection from LLM...");
+
+    let llmResponse;
+
+    // Direct LLM call based on provider type
+    if (providerId === "openai") {
+      const OpenAI = (await import("openai")).default;
+      const apiKey =
+        resolvedAuth?.apiKey ||
+        resolvedAuth?.oauthAccessToken ||
+        process.env.OPENAI_API_KEY;
+      if (!apiKey) {
+        throw new Error("OpenAI API key missing");
+      }
+      const client = new OpenAI({ apiKey });
+
+      const response = await client.chat.completions.create({
+        model: model || "gpt-4o",
+        messages: [
+          { role: "system", content: semanticPrompt.system },
+          { role: "user", content: semanticPrompt.prompt },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      llmResponse = response.choices[0]?.message?.content || "{}";
+    } else if (providerId === "anthropic") {
+      const Anthropic = (await import("@anthropic-ai/sdk")).default;
+      const apiKey =
+        resolvedAuth?.apiKey ||
+        resolvedAuth?.oauthAccessToken ||
+        process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        throw new Error("Anthropic API key missing");
+      }
+      const client = new Anthropic({ apiKey });
+
+      const response = await client.messages.create({
+        model: model || "claude-3-5-sonnet-20241022",
+        max_tokens: 2048,
+        system: semanticPrompt.system,
+        messages: [{ role: "user", content: semanticPrompt.prompt }],
+      });
+
+      llmResponse = response.content?.[0]?.text || "{}";
+    } else if (providerId === "gemini") {
+      const { GoogleGenAI } = await import("@google/generative-ai");
+      const apiKey = resolvedAuth?.apiKey || process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error("Gemini API key missing");
+      }
+      const client = new GoogleGenAI(apiKey);
+      const aiModel = client.models.getGenerativeModel({
+        model: model || "gemini-2.0-flash-exp",
+      });
+
+      const response = await aiModel.generateContent({
+        contents: [semanticPrompt.system, semanticPrompt.prompt].join("\n\n"),
+        config: { responseMimeType: "application/json" },
+      });
+
+      llmResponse = response?.text ?? "{}";
+    } else {
+      throw new Error(
+        `Provider ${providerId} not supported for hierarchical packer endpoint`,
+      );
+    }
+
+    // Parse and validate semantic plan
+    const semanticPlan = parseSemanticPlan(llmResponse, beds);
+    console.log(
+      `[HierarchicalPacker] LLM selected ${semanticPlan.beds.reduce((sum, b) => sum + b.plants.reduce((s, p) => s + p.count, 0), 0)} total plants`,
+    );
+
+    // Phase 2: Use hierarchical force-directed packer
+    const layouts = [];
+
+    for (const bedPlan of semanticPlan.beds) {
+      const bed = beds.find((b) => b.id === bedPlan.bedId);
+      if (!bed) {
+        console.warn(
+          `[HierarchicalPacker] Bed ${bedPlan.bedId} not found, skipping`,
+        );
+        continue;
+      }
+
+      console.log(
+        `[HierarchicalPacker] Packing ${bedPlan.plants.length} plant types into bed ${bed.name || bed.id}...`,
+      );
+
+      // Merge user config with defaults
+      const packerConfig = {
+        intra_group_attraction: config.intra_group_attraction ?? 0.3,
+        inter_group_repulsion: config.inter_group_repulsion ?? 0.2,
+        collision_strength: config.collision_strength ?? 0.8,
+        boundary_force: config.boundary_force ?? 0.5,
+        cluster_padding: config.cluster_padding ?? 2,
+        min_spacing: config.min_spacing ?? 0.5,
+        max_iterations: config.max_iterations ?? 500,
+        convergence_threshold: config.convergence_threshold ?? 0.01,
+        damping: config.damping ?? 0.9,
+        random_seed: config.random_seed ?? null,
+      };
+
+      const packer = new ForceDirectedGardenPacker(bed, {
+        sunOrientation,
+        ...packerConfig,
+      });
+
+      // Convert semantic plan to packer format
+      const packerInput = convertPlanToPackerFormat({
+        beds: [bedPlan],
+      });
+
+      // Pack plants using hierarchical force-directed algorithm
+      const result = packer.packPlants(packerInput[0].plants);
+
+      console.log(
+        `[HierarchicalPacker] Placed ${result.stats.placed} plants (${result.stats.converged ? "converged" : "max iterations"})`,
+      );
+      console.log(
+        `[HierarchicalPacker] Packing density: ${result.stats.packingDensity}, clusters: ${result.stats.clusters}`,
+      );
+
+      if (result.violations.bounds.length > 0) {
+        console.warn(
+          `[HierarchicalPacker] ${result.violations.bounds.length} bounds violations detected`,
+        );
+      }
+
+      if (result.violations.collisions.length > 0) {
+        console.warn(
+          `[HierarchicalPacker] ${result.violations.collisions.length} collisions detected`,
+        );
+      }
+
+      layouts.push({
+        bedId: bed.id,
+        placements: result.placements,
+        strategy: bedPlan.strategy,
+        stats: result.stats,
+        clusters: result.clusters,
+        violations: result.violations,
+      });
+    }
+
+    res.json({
+      provider: provider.id,
+      method: "hierarchical-force-directed",
+      semanticPlan: {
+        overallReasoning: semanticPlan.overallReasoning,
+        beds: semanticPlan.beds.map((b) => ({
+          bedId: b.bedId,
+          plantCount: b.plants.reduce((sum, p) => sum + p.count, 0),
+          strategy: b.strategy,
+        })),
+      },
+      layouts,
+    });
+  } catch (err) {
+    console.error("[HierarchicalPacker] Error:", err);
+    res.status(500).json({
+      error: err.message || "Hierarchical packer optimization failed.",
     });
   }
 });
