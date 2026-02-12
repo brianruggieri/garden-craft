@@ -2,8 +2,9 @@
  * Request validation middleware using AJV
  */
 
-import Ajv from "ajv";
-import { VEGGIE_TYPES } from "../veggieMetadata.js";
+import Ajv, { ValidateFunction } from "ajv";
+import { VEGGIE_TYPES } from "../veggieMetadata";
+import type { Request, Response, NextFunction } from "express";
 
 const ajv = new Ajv({
   allErrors: true,
@@ -95,16 +96,18 @@ const optimizeRequestSchema = {
   additionalProperties: false,
 };
 
-export const validateOptimizeRequest = ajv.compile(optimizeRequestSchema);
+export const validateOptimizeRequest: ValidateFunction = ajv.compile(
+  optimizeRequestSchema,
+);
 
 /**
  * Express middleware factory for validating request bodies against a schema
  *
- * @param {Function} validator - Compiled AJV validator function
- * @returns {Function} Express middleware
+ * @param validator - Compiled AJV validator function
+ * @returns Express middleware
  */
-export function createValidationMiddleware(validator) {
-  return (req, res, next) => {
+export function createValidationMiddleware(validator: ValidateFunction) {
+  return (req: Request, res: Response, next: NextFunction) => {
     const valid = validator(req.body);
 
     if (!valid) {
