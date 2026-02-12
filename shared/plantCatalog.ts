@@ -1,4 +1,11 @@
-export const PLANT_CATALOG = {
+import type { PlantMeta, SeedVariety } from "./types";
+
+interface PlantCatalog {
+  plants: Record<string, PlantMeta>;
+  varieties: SeedVariety[];
+}
+
+export const PLANT_CATALOG: PlantCatalog = {
   plants: {
     Tomato: {
       id: "plant_tomato",
@@ -11,7 +18,7 @@ export const PLANT_CATALOG = {
       companions: ["Basil", "Marigold", "Oregano"],
       antagonists: [],
       habit: "Tall & Vertical",
-      root: "Deep (> 12\")",
+      root: 'Deep (> 12")',
     },
     Basil: {
       id: "plant_basil",
@@ -24,7 +31,7 @@ export const PLANT_CATALOG = {
       companions: ["Tomato", "Pepper", "Oregano"],
       antagonists: [],
       habit: "Bushy & Medium",
-      root: "Shallow (< 6\")",
+      root: 'Shallow (< 6")',
     },
     Marigold: {
       id: "plant_marigold",
@@ -37,7 +44,7 @@ export const PLANT_CATALOG = {
       companions: ["Tomato", "Pepper", "Basil"],
       antagonists: [],
       habit: "Bushy & Medium",
-      root: "Shallow (< 6\")",
+      root: 'Shallow (< 6")',
     },
     Pepper: {
       id: "plant_pepper",
@@ -50,7 +57,7 @@ export const PLANT_CATALOG = {
       companions: ["Basil", "Marigold", "Oregano"],
       antagonists: [],
       habit: "Bushy & Medium",
-      root: "Medium (6-12\")",
+      root: 'Medium (6-12")',
     },
     Oregano: {
       id: "plant_oregano",
@@ -63,7 +70,7 @@ export const PLANT_CATALOG = {
       companions: ["Tomato", "Pepper", "Basil"],
       antagonists: [],
       habit: "Ground Cover",
-      root: "Shallow (< 6\")",
+      root: 'Shallow (< 6")',
     },
     Thyme: {
       id: "plant_thyme",
@@ -76,7 +83,7 @@ export const PLANT_CATALOG = {
       companions: ["Tomato", "Basil"],
       antagonists: [],
       habit: "Ground Cover",
-      root: "Shallow (< 6\")",
+      root: 'Shallow (< 6")',
     },
     Sage: {
       id: "plant_sage",
@@ -89,7 +96,7 @@ export const PLANT_CATALOG = {
       companions: ["Marigold", "Oregano"],
       antagonists: [],
       habit: "Bushy & Medium",
-      root: "Medium (6-12\")",
+      root: 'Medium (6-12")',
     },
   },
   varieties: [
@@ -208,6 +215,6 @@ export const PLANT_CATALOG = {
   ],
 };
 
-export const VEGGIE_METADATA = PLANT_CATALOG.plants;
-export const SEED_VARIETY_LIBRARY = PLANT_CATALOG.varieties;
-export const VEGGIE_TYPES = Object.keys(VEGGIE_METADATA);
+export const VEGGIE_METADATA: Record<string, PlantMeta> = PLANT_CATALOG.plants;
+export const SEED_VARIETY_LIBRARY: SeedVariety[] = PLANT_CATALOG.varieties;
+export const VEGGIE_TYPES: string[] = Object.keys(VEGGIE_METADATA);
