@@ -9,16 +9,46 @@
  * This ensures consistent auth behavior across all endpoints and providers.
  */
 
+interface AuthObject {
+  apiKey?: string;
+  oauthAccessToken?: string;
+}
+
+interface TokenEntry {
+  accessToken: string;
+  tokenType?: string | null;
+  scopes?: string | null;
+  hasRefreshToken?: boolean;
+  receivedAt?: number;
+  expiresAt?: number | null;
+}
+
+interface ResolveAuthOptions {
+  providerId: string;
+  auth?: AuthObject;
+  tokenStore?: Map<string, TokenEntry>;
+}
+
+interface HasAuthOptions {
+  providerId: string;
+  auth?: AuthObject;
+  env?: NodeJS.ProcessEnv;
+}
+
 /**
  * Resolve authentication for a provider request
  *
- * @param {Object} options
- * @param {string} options.providerId - Provider identifier ('openai', 'anthropic', 'gemini', 'local')
- * @param {Object} options.auth - Explicit auth from request { apiKey?, oauthAccessToken? }
- * @param {Map} options.tokenStore - OAuth token store (Map<providerId, tokenEntry>)
- * @returns {Object|undefined} Resolved auth object or undefined if no auth available
+ * @param options - Resolution options
+ * @param options.providerId - Provider identifier ('openai', 'anthropic', 'gemini', 'local')
+ * @param options.auth - Explicit auth from request { apiKey?, oauthAccessToken? }
+ * @param options.tokenStore - OAuth token store (Map<providerId, tokenEntry>)
+ * @returns Resolved auth object or undefined if no auth available
  */
-export function resolveAuth({ providerId, auth, tokenStore }) {
+export function resolveAuth({
+  providerId,
+  auth,
+  tokenStore,
+}: ResolveAuthOptions): AuthObject | undefined {
   // Priority 1: Explicit auth from request
   if (auth) {
     if (auth.apiKey || auth.oauthAccessToken) {
@@ -43,23 +73,27 @@ export function resolveAuth({ providerId, auth, tokenStore }) {
 /**
  * Validate that authentication is available for a provider
  *
- * @param {Object} options
- * @param {string} options.providerId - Provider identifier
- * @param {Object} options.auth - Resolved auth object
- * @param {Object} options.env - Environment variables
- * @returns {boolean} True if auth is available
+ * @param options - Validation options
+ * @param options.providerId - Provider identifier
+ * @param options.auth - Resolved auth object
+ * @param options.env - Environment variables
+ * @returns True if auth is available
  */
-export function hasAuth({ providerId, auth, env = process.env }) {
+export function hasAuth({
+  providerId,
+  auth,
+  env = process.env,
+}: HasAuthOptions): boolean {
   // Check resolved auth object
   if (auth?.apiKey || auth?.oauthAccessToken) {
     return true;
   }
 
   // Check environment variables as fallback
-  const envKeys = {
-    openai: ['OPENAI_API_KEY'],
-    anthropic: ['ANTHROPIC_API_KEY'],
-    gemini: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
+  const envKeys: Record<string, string[] | null> = {
+    openai: ["OPENAI_API_KEY"],
+    anthropic: ["ANTHROPIC_API_KEY"],
+    gemini: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
     local: null, // Local provider doesn't need auth
   };
 
