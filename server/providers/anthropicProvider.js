@@ -132,6 +132,7 @@ export const anthropicProvider = {
     optimizationGoals,
     auth,
     model,
+    customPrompt,
   }) {
     // Prefer runtime override on provider for tests, otherwise use module-level factory.
     const clientFactory =
@@ -140,7 +141,12 @@ export const anthropicProvider = {
       createClient;
     const client = clientFactory(auth || {});
 
-    const { system, prompt } = buildGardenPrompt({
+    const {
+      system,
+      prompt,
+      schema: customSchema,
+    } = customPrompt ||
+    buildGardenPrompt({
       beds,
       seeds,
       sunOrientation,
@@ -156,7 +162,7 @@ export const anthropicProvider = {
     });
 
     // Use Anthropic's array-root schema (more natural for this use case)
-    const schema = buildAnthropicJsonSchema();
+    const schema = customSchema || buildAnthropicJsonSchema();
 
     // Anthropic returns array format directly, so disable normalization
     return runProviderRequest({

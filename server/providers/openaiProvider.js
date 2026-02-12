@@ -58,6 +58,7 @@ export const openaiProvider = {
     optimizationGoals,
     auth,
     model,
+    customPrompt,
   }) {
     // Maintain test-friendly override semantics: prefer a runtime property on the provider
     // object if present, otherwise fall back to the module-level createClient.
@@ -65,7 +66,12 @@ export const openaiProvider = {
       (typeof openaiProvider !== "undefined" && openaiProvider.createClient) ||
       createClient;
 
-    const { system, prompt } = buildGardenPrompt({
+    const {
+      system,
+      prompt,
+      schema: customSchema,
+    } = customPrompt ||
+    buildGardenPrompt({
       beds,
       seeds,
       sunOrientation,
@@ -87,7 +93,7 @@ export const openaiProvider = {
       }),
       invoke: (client, opts) => client.chat.completions.create(opts),
       extractResponseText: defaultResponseExtractor,
-      schema: buildOpenAiSchema(),
+      schema: customSchema || buildOpenAiSchema(),
       schemaInserter: openaiSchemaInserter,
       detectRefusalOrIncomplete: detectOpenAIRefusalOrIncomplete,
       useSchema: USE_SCHEMA,

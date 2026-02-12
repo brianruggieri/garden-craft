@@ -104,6 +104,7 @@ export const geminiProvider = {
     optimizationGoals,
     auth,
     model,
+    customPrompt,
   }) {
     // Prefer runtime override on provider for tests, otherwise use module-level factory.
     const clientFactory =
@@ -111,7 +112,12 @@ export const geminiProvider = {
       createClient;
     const client = clientFactory(auth || {});
 
-    const { system, prompt } = buildGardenPrompt({
+    const {
+      system,
+      prompt,
+      schema: customSchema,
+    } = customPrompt ||
+    buildGardenPrompt({
       beds,
       seeds,
       sunOrientation,
@@ -121,7 +127,7 @@ export const geminiProvider = {
 
     // Use OpenAI schema for local validation (object root with layouts array).
     // Gemini will receive its own Type-based schema via the inserter.
-    const schema = buildOpenAISchema();
+    const schema = customSchema || buildOpenAISchema();
 
     // buildBaseOptions produces the SDK-specific base options the invoke function expects.
     const buildBaseOptions = () => ({
