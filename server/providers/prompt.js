@@ -60,54 +60,6 @@ export function buildGardenPrompt({
 
   const system = DEFAULT_SYSTEM;
 
-  const schema = {
-    type: "array",
-    items: {
-      type: "object",
-      properties: {
-        bedId: { type: "string" },
-        placements: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              id: { type: "string" },
-              veggieType: { type: "string", enum: VEGGIE_TYPES },
-              varietyName: { type: "string" },
-              x: {
-                type: "number",
-                description: "Inches from bed left edge",
-              },
-              y: {
-                type: "number",
-                description: "Inches from bed top edge",
-              },
-              size: {
-                type: "number",
-                description: "Diameter of the plant canopy in inches",
-              },
-              placementReasoning: {
-                type: "string",
-                description: "Why this plant is in this specific spot",
-              },
-              spacingAnalysis: {
-                type: "string",
-                description: "How it relates to its immediate neighbors",
-              },
-              companionInsights: {
-                type: "string",
-                description:
-                  "Specific companion planting benefit achieved here",
-              },
-            },
-            required: ["id", "veggieType", "varietyName", "x", "y", "size"],
-          },
-        },
-      },
-      required: ["bedId", "placements"],
-    },
-  };
-
   // Calculate priority-based variety distribution with target counts per bed
   const totalPriority = varieties.reduce((sum, v) => sum + v.priority, 0);
 
@@ -183,7 +135,6 @@ export function buildGardenPrompt({
       "- 8-12 Thyme in remaining gaps",
       "= 16-22 plants total filling the space",
     ].join("\n"),
-    schema,
   };
 
   return payload;

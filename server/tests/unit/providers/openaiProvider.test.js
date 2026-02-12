@@ -49,7 +49,7 @@ test("generateLayout parses valid JSON response from OpenAI client and requests 
     },
   ];
 
-  // Mock response in object-root format (normalized to array by providerUtils)
+  // Mock response in object-root format (OpenAI requires this)
   const mockResponse = { layouts: expectedLayouts };
 
   let receivedOptions = null;
@@ -168,11 +168,14 @@ test("generateLayout throws when JSON doesn't match the canonical schema", async
         placements: [
           {
             id: "p1",
-            veggieType: "tomato",
+            veggieType: "Tomato",
             // varietyName missing => schema validation should fail
             x: 1,
             y: 2,
             size: 3,
+            placementReasoning: null,
+            spacingAnalysis: null,
+            companionInsights: null,
           },
         ],
       },
