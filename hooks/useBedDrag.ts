@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction, MouseEvent as ReactMouseEvent } from "react";
 import { GardenBed } from "../shared/types";
-import { GRID_SIZE } from "../constants";
+import { GRID_SIZE, GRID_UNITS, INCHES_PER_GRID } from "../constants";
 
 type Pan = { x: number; y: number };
 
@@ -70,8 +70,14 @@ export const useBedDrag = ({
         (e.clientY - rect.top - pan.y) / (GRID_SIZE * zoom) -
         dragOffset.current.y;
 
-      const x = Math.max(0, Math.round(rawX));
-      const y = Math.max(0, Math.round(rawY));
+      const draggedBed = beds.find((b) => b.id === draggedBedId);
+      const bedWidthUnits = draggedBed ? draggedBed.width / INCHES_PER_GRID : 0;
+      const bedHeightUnits = draggedBed ? draggedBed.height / INCHES_PER_GRID : 0;
+      const maxX = Math.max(0, GRID_UNITS - bedWidthUnits);
+      const maxY = Math.max(0, GRID_UNITS - bedHeightUnits);
+
+      const x = Math.min(maxX, Math.max(0, Math.round(rawX)));
+      const y = Math.min(maxY, Math.max(0, Math.round(rawY)));
 
       setBeds((prev) =>
         prev.map((b) => (b.id === draggedBedId ? { ...b, x, y } : b)),

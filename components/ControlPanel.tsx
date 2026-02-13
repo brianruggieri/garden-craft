@@ -32,6 +32,9 @@ interface ControlPanelProps {
   savedGardens: string[];
   savedPlantings: string[];
   onSelectBed: (id: string) => void;
+  backgroundTile: { id: string; name: string; url: string };
+  backgroundOptions: { id: string; name: string; url: string }[];
+  onChangeBackgroundTile: (tile: { id: string; name: string; url: string }) => void;
   aiProvider: string;
   aiModel: string;
   aiApiKey: string;
@@ -66,6 +69,9 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   savedGardens,
   savedPlantings,
   onSelectBed,
+  backgroundTile,
+  backgroundOptions,
+  onChangeBackgroundTile,
   aiProvider,
   aiModel,
   aiApiKey,
@@ -404,6 +410,41 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     </button>
                   ),
                 )}
+              </div>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2">
+                <i className="fas fa-paint-brush text-emerald-500"></i> Canvas Vibe
+              </h2>
+              <div className="grid grid-cols-3 gap-2">
+                {backgroundOptions.map((tile) => {
+                  const isActive = tile.id === backgroundTile.id;
+                  return (
+                    <button
+                      key={tile.id}
+                      onClick={() => onChangeBackgroundTile(tile)}
+                      className={`group rounded-xl border p-2 text-left transition-all ${
+                        isActive
+                          ? "border-emerald-500 ring-2 ring-emerald-400/40 bg-emerald-50"
+                          : "border-slate-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/50"
+                      }`}
+                      title={`Switch to ${tile.name} background`}
+                    >
+                      <div
+                        className="h-10 w-full rounded-lg border border-white/60 shadow-inner"
+                        style={{
+                          backgroundImage: `url(${tile.url})`,
+                          backgroundSize: "cover",
+                          backgroundPosition: "center",
+                        }}
+                      />
+                      <div className="mt-2 text-[10px] font-black uppercase tracking-widest text-slate-600 group-hover:text-emerald-700">
+                        {tile.name}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </section>
 

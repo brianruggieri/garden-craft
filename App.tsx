@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   GardenBed,
   Vegetable,
@@ -12,7 +12,12 @@ import ContextBar from "./components/ContextBar";
 import CatalogStatusBanner from "./components/CatalogStatusBanner";
 import VeggieLegend from "./components/VeggieLegend";
 import { generateGardenLayout } from "./services/geminiService";
-import { GRID_SIZE } from "./constants";
+import {
+  GRID_PIXEL_SIZE,
+  GRID_SIZE,
+  GRID_UNITS,
+  INCHES_PER_GRID,
+} from "./constants";
 import { useGardenStorage } from "./hooks/useGardenStorage";
 import { usePlantCatalog } from "./hooks/usePlantCatalog";
 import { useSeedInit } from "./hooks/useSeedInit";
@@ -24,14 +29,19 @@ import { useBedHandlers } from "./hooks/useBedHandlers";
 import { useSeedHandlers } from "./hooks/useSeedHandlers";
 
 const App: React.FC = () => {
+  const initialBedWidthUnits = 48 / INCHES_PER_GRID;
+  const initialBedHeightUnits = 96 / INCHES_PER_GRID;
+  const initialBedX = Math.round(GRID_UNITS / 2 - initialBedWidthUnits / 2);
+  const initialBedY = Math.round(GRID_UNITS / 2 - initialBedHeightUnits / 2);
+
   const [beds, setBeds] = useState<GardenBed[]>([
     {
       id: "1",
       name: "Main Bed",
       width: 48,
       height: 96,
-      x: 5,
-      y: 5,
+      x: initialBedX,
+      y: initialBedY,
       shape: "rectangle",
     },
   ]);
@@ -40,6 +50,94 @@ const App: React.FC = () => {
   const [layouts, setLayouts] = useState<BedLayout[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedBedId, setSelectedBedId] = useState<string | null>(null);
+  const [backgroundTiles, setBackgroundTiles] = useState<
+    { id: string; name: string; url: string }[]
+  >([]);
+  const [backgroundTileId, setBackgroundTileId] = useState("none");
+  const [dotColor, setDotColor] = useState("rgba(148, 163, 184, 0.9)");
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadTiles = async () => {
+      try {
+        const res = await fetch("/tiles.json");
+        if (!res.ok) return;
+        const files = (await res.json()) as string[];
+        const tiles = [
+          { id: "none", name: "None", url: "" },
+          ...files
+            .filter((file) => /-tile\.(png|jpe?g|svg)$/i.test(file))
+            .map((file) => {
+              const filename = file.split("/").pop() || file;
+              const id = filename.replace(/\.[^.]+$/, "");
+              const rawName = id.replace(/-tile$/, "");
+              const name = rawName
+                .split("-")
+                .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                .join(" ");
+              return {
+                id,
+                name,
+                url: file.startsWith("/") ? file : `/${file}`,
+              };
+            })
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        ];
+        if (!isMounted) return;
+        setBackgroundTiles(tiles);
+        setBackgroundTileId((prev) => prev || "none");
+      } catch (err) {
+        // fallback: keep empty list if manifest missing
+      }
+    };
+    loadTiles();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const backgroundTile =
+    backgroundTiles.find((tile) => tile.id === backgroundTileId) ??
+    backgroundTiles[0];
+
+  useEffect(() => {
+    if (!backgroundTile?.url) {
+      setDotColor("rgba(148, 163, 184, 0.9)");
+      return;
+    }
+
+    const img = new Image();
+    img.src = backgroundTile.url;
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const size = 32;
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0, size, size);
+      const data = ctx.getImageData(0, 0, size, size).data;
+      let total = 0;
+      let count = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+        total += luminance;
+        count += 1;
+      }
+      const avg = total / Math.max(1, count);
+      setDotColor(
+        avg > 0.6
+          ? "rgba(30, 41, 59, 0.7)"
+          : "rgba(241, 245, 249, 0.8)",
+      );
+    };
+    img.onerror = () => {
+      setDotColor("rgba(148, 163, 184, 0.9)");
+    };
+  }, [backgroundTile?.url]);
 
   const {
     zoom,
@@ -54,10 +152,16 @@ const App: React.FC = () => {
     handleWheel,
     handleCanvasMouseDown,
     getCenteredGridPoint,
+    centerCanvas,
   } = useCanvasNavigation();
 
-  const { catalogLoading, catalogError, plantMetadata, seedVarieties, veggieTypes } =
-    usePlantCatalog();
+  const {
+    catalogLoading,
+    catalogError,
+    plantMetadata,
+    seedVarieties,
+    veggieTypes,
+  } = usePlantCatalog();
 
   useSeedInit({ seeds, setSeeds, veggieTypes });
 
@@ -189,6 +293,9 @@ const App: React.FC = () => {
         savedGardens={savedGardens}
         savedPlantings={savedPlantings}
         onSelectBed={(id) => setSelectedBedId(id)}
+        backgroundTile={backgroundTile}
+        backgroundOptions={backgroundTiles}
+        onChangeBackgroundTile={(tile) => setBackgroundTileId(tile.id)}
         aiProvider={aiProvider}
         aiModel={aiModel}
         aiApiKey={aiApiKey}
@@ -230,16 +337,28 @@ const App: React.FC = () => {
           onClick={() => setSelectedBedId(null)}
         >
           <div
-            className="absolute origin-top-left transition-transform duration-75 ease-out"
+            className="absolute origin-top-left transition-transform duration-75 ease-out grid-boundary"
             style={{
               transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-              width: "5000px",
-              height: "5000px",
-              backgroundImage:
-                "radial-gradient(#94a3b8 1.5px, transparent 1.5px)",
-              backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px`,
+              width: `${GRID_PIXEL_SIZE}px`,
+              height: `${GRID_PIXEL_SIZE}px`,
+              backgroundImage: backgroundTile?.url
+                ? `radial-gradient(${dotColor} 1.5px, transparent 1.5px), linear-gradient(rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.45)), url(${backgroundTile.url})`
+                : `radial-gradient(${dotColor} 1.5px, transparent 1.5px)`,
+              backgroundSize: backgroundTile?.url
+                ? `${GRID_SIZE}px ${GRID_SIZE}px, 100% 100%, 256px 256px`
+                : `${GRID_SIZE}px ${GRID_SIZE}px`,
+              backgroundRepeat: backgroundTile?.url
+                ? "repeat, no-repeat, repeat"
+                : "repeat",
             }}
           >
+            <div className="grid-tape">
+              <span className="grid-tape__edge grid-tape__edge--top" />
+              <span className="grid-tape__edge grid-tape__edge--bottom" />
+              <span className="grid-tape__edge grid-tape__edge--left" />
+              <span className="grid-tape__edge grid-tape__edge--right" />
+            </div>
             {beds.map((bed) => (
               <GardenBedView
                 key={bed.id}
@@ -265,7 +384,7 @@ const App: React.FC = () => {
               className="px-6 min-w-[100px] text-center font-black text-sm text-slate-900 cursor-pointer hover:text-emerald-700"
               onClick={() => {
                 setZoom(1);
-                setPan({ x: 0, y: 0 });
+                centerCanvas(1);
               }}
               title="Reset View"
             >
@@ -315,10 +434,7 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <VeggieLegend
-          veggieTypes={veggieTypes}
-          plantMetadata={plantMetadata}
-        />
+        <VeggieLegend veggieTypes={veggieTypes} plantMetadata={plantMetadata} />
       </main>
     </div>
   );
