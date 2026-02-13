@@ -4,6 +4,7 @@ import {
   SunOrientation,
   Vegetable,
 } from "../shared/types";
+import { getServerUrl, withServerUrl } from "./serverUrl";
 
 type AIProviderId = "gemini" | "openai" | "anthropic" | "local";
 
@@ -26,19 +27,11 @@ interface OptimizationResponse {
   layouts: BedLayout[];
 }
 
-const DEFAULT_SERVER_URL =
-  (typeof window !== "undefined" &&
-    (window.localStorage?.getItem("GARDENCRAFT_AI_SERVER_URL") ||
-      (typeof (import.meta as any) !== "undefined" &&
-        (import.meta as any).env?.VITE_AI_SERVER_URL) ||
-      window.location?.origin)) ||
-  "http://localhost:8787";
-
 async function postOptimize(
   serverUrl: string,
   payload: OptimizationRequest,
 ): Promise<OptimizationResponse> {
-  const response = await fetch(`${serverUrl}/api/optimize`, {
+  const response = await fetch(withServerUrl("/api/optimize", serverUrl), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -71,7 +64,7 @@ export async function generateGardenLayout(
     serverUrl?: string;
   } = {},
 ): Promise<BedLayout[]> {
-  const serverUrl = options.serverUrl || DEFAULT_SERVER_URL;
+  const serverUrl = options.serverUrl || getServerUrl();
 
   const result = await postOptimize(serverUrl, {
     provider: options.provider || "local",

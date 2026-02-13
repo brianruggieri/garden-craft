@@ -8,6 +8,7 @@ import {
   BedLayout,
   PlantMeta,
 } from "../shared/types";
+import { withServerUrl } from "../services/serverUrl";
 
 interface ControlPanelProps {
   beds: GardenBed[];
@@ -107,7 +108,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     if (!aiProvider) return;
     setDeviceStatus("starting");
     try {
-      const res = await fetch(`/oauth/${aiProvider}/device/start`, {
+      const res = await fetch(withServerUrl(`/oauth/${aiProvider}/device/start`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -139,7 +140,11 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
         if (!body.key) return;
         try {
           const p = await fetch(
-            `/oauth/${aiProvider}/device/poll?key=${encodeURIComponent(body.key)}`,
+            withServerUrl(
+              `/oauth/${aiProvider}/device/poll?key=${encodeURIComponent(
+                body.key,
+              )}`,
+            ),
             {
               method: "GET",
               headers: { "Content-Type": "application/json" },
@@ -178,7 +183,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               // Optionally refresh server-side connected status shown elsewhere
               // fetch the connected endpoint to let server mark token present
               try {
-                await fetch(`/oauth/${aiProvider}/connected`);
+                await fetch(withServerUrl(`/oauth/${aiProvider}/connected`));
               } catch (e) {
                 // ignore
               }
@@ -219,7 +224,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   const disconnectProvider = async () => {
     if (!aiProvider) return;
     try {
-      const res = await fetch(`/oauth/${aiProvider}/disconnect`, {
+      const res = await fetch(withServerUrl(`/oauth/${aiProvider}/disconnect`), {
         method: "POST",
       });
       if (!res.ok) {
@@ -229,7 +234,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
         setDeviceStatus("idle");
         // optionally notify server status was cleared
         try {
-          await fetch(`/oauth/${aiProvider}/connected`);
+          await fetch(withServerUrl(`/oauth/${aiProvider}/connected`));
         } catch (e) {}
       }
     } catch (err) {

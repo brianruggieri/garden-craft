@@ -1,17 +1,10 @@
 import { PlantCatalog } from "../shared/types";
-
-const DEFAULT_SERVER_URL =
-  (typeof window !== "undefined" &&
-    (window.localStorage?.getItem("GARDENCRAFT_AI_SERVER_URL") ||
-      (typeof (import.meta as any) !== "undefined" &&
-        (import.meta as any).env?.VITE_AI_SERVER_URL) ||
-      window.location?.origin)) ||
-  "http://localhost:8787";
+import { getServerUrl, withServerUrl } from "./serverUrl";
 
 export async function fetchPlantCatalog(
-  serverUrl: string = DEFAULT_SERVER_URL,
+  serverUrl: string = getServerUrl(),
 ): Promise<PlantCatalog> {
-  const response = await fetch(`${serverUrl}/api/catalog`);
+  const response = await fetch(withServerUrl("/api/catalog", serverUrl));
   if (!response.ok) {
     const text = await response.text();
     throw new Error(

@@ -16,6 +16,7 @@ import GardenBedView from "./components/GardenBedView";
 import { generateGardenLayout } from "./services/geminiService";
 import { fetchPlantCatalog } from "./services/catalogService";
 import { GRID_SIZE } from "./constants";
+import { withServerUrl } from "./services/serverUrl";
 
 const App: React.FC = () => {
   const [beds, setBeds] = useState<GardenBed[]>([
@@ -89,7 +90,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const loadProviders = async () => {
       try {
-        const res = await fetch("/api/providers");
+        const res = await fetch(withServerUrl("/api/providers"));
         if (!res.ok) return;
         const data = await res.json();
         if (Array.isArray(data?.providers)) {
@@ -160,7 +161,9 @@ const App: React.FC = () => {
     const checkOAuth = async () => {
       setOauthChecking(true);
       try {
-        const res = await fetch(`/oauth/${aiProvider}/connected`);
+        const res = await fetch(
+          withServerUrl(`/oauth/${aiProvider}/connected`),
+        );
         if (!res.ok) {
           if (isActive) setOauthStatus(null);
           return;
@@ -316,7 +319,9 @@ const App: React.FC = () => {
 
   const handleTriggerOAuth = (provider: string) => {
     const redirect = encodeURIComponent(window.location.href);
-    window.location.href = `/oauth/${provider}/start?redirect=${redirect}`;
+    window.location.href = withServerUrl(
+      `/oauth/${provider}/start?redirect=${redirect}`,
+    );
   };
 
   // Start a device-code flow for headless/dev environments.
@@ -324,7 +329,7 @@ const App: React.FC = () => {
   const handleStartDeviceFlow = async (provider: string) => {
     if (!provider) return null;
     try {
-      const res = await fetch(`/oauth/${provider}/device/start`, {
+      const res = await fetch(withServerUrl(`/oauth/${provider}/device/start`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -350,7 +355,9 @@ const App: React.FC = () => {
     if (!provider || !key) return null;
     try {
       const res = await fetch(
-        `/oauth/${provider}/device/poll?key=${encodeURIComponent(key)}`,
+        withServerUrl(
+          `/oauth/${provider}/device/poll?key=${encodeURIComponent(key)}`,
+        ),
         {
           method: "GET",
           headers: { "Content-Type": "application/json" },
@@ -369,7 +376,7 @@ const App: React.FC = () => {
   const handleDisconnectProvider = async (provider: string) => {
     if (!provider) return false;
     try {
-      const res = await fetch(`/oauth/${provider}/disconnect`, {
+      const res = await fetch(withServerUrl(`/oauth/${provider}/disconnect`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
