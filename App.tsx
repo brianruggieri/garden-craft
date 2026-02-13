@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState } from "react";
 import {
   GardenBed,
   Vegetable,
@@ -7,16 +7,17 @@ import {
   BedLayout,
   BedShape,
   SeedVariety,
-  AIProviderId,
-  PlantCatalog,
-  PlantMeta,
 } from "./shared/types";
 import ControlPanel from "./components/ControlPanel";
 import GardenBedView from "./components/GardenBedView";
 import { generateGardenLayout } from "./services/geminiService";
-import { fetchPlantCatalog } from "./services/catalogService";
 import { GRID_SIZE } from "./constants";
-import { withServerUrl } from "./services/serverUrl";
+import { useGardenStorage } from "./hooks/useGardenStorage";
+import { usePlantCatalog } from "./hooks/usePlantCatalog";
+import { useSeedInit } from "./hooks/useSeedInit";
+import { useAIProviders } from "./hooks/useAIProviders";
+import { useCanvasNavigation } from "./hooks/useCanvasNavigation";
+import { useBedDrag } from "./hooks/useBedDrag";
 
 const App: React.FC = () => {
   const [beds, setBeds] = useState<GardenBed[]>([
@@ -36,218 +37,75 @@ const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedBedId, setSelectedBedId] = useState<string | null>(null);
 
-  // Canvas Navigation State
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = useState(false);
-  const [isSpacePressed, setIsSpacePressed] = useState(false);
-  const canvasRef = useRef<HTMLDivElement>(null);
+  const {
+    zoom,
+    pan,
+    isPanning,
+    isSpacePressed,
+    canvasRef,
+    setZoom,
+    setPan,
+    setIsPanning,
+    setIsSpacePressed,
+    handleWheel,
+    handleCanvasMouseDown,
+    getCenteredGridPoint,
+  } = useCanvasNavigation();
 
-  // Storage state
-  const [savedGardens, setSavedGardens] = useState<string[]>([]);
-  const [savedPlantings, setSavedPlantings] = useState<string[]>([]);
+  const { catalogLoading, catalogError, plantMetadata, seedVarieties, veggieTypes } =
+    usePlantCatalog();
 
-  // AI settings state
-  const [aiProvider, setAiProvider] = useState<AIProviderId>("local");
-  const [aiModel, setAiModel] = useState("");
-  const [aiApiKey, setAiApiKey] = useState("");
-  const [aiProviders, setAiProviders] = useState<
-    { id: string; name: string; supportsOAuth?: boolean }[]
-  >([]);
-  const [oauthStatus, setOauthStatus] = useState<{
-    connected: boolean;
-    expiresAt: number | null;
-  } | null>(null);
-  const [oauthChecking, setOauthChecking] = useState(false);
-  const [catalog, setCatalog] = useState<PlantCatalog | null>(null);
-  const [catalogError, setCatalogError] = useState<string | null>(null);
-  const [catalogLoading, setCatalogLoading] = useState(false);
+  useSeedInit({ seeds, setSeeds, veggieTypes });
 
-  useEffect(() => {
-    const gardenKeys = Object.keys(localStorage).filter((k) =>
-      k.startsWith("garden_v1_"),
-    );
-    setSavedGardens(gardenKeys.map((k) => k.replace("garden_v1_", "")));
-    const plantingKeys = Object.keys(localStorage).filter((k) =>
-      k.startsWith("planting_v1_"),
-    );
-    setSavedPlantings(plantingKeys.map((k) => k.replace("planting_v1_", "")));
+  const {
+    savedGardens,
+    savedPlantings,
+    handleSaveGarden,
+    handleLoadGarden,
+    handleSavePlanting,
+    handleLoadPlanting,
+  } = useGardenStorage({
+    beds,
+    sunOrientation,
+    seeds,
+    layouts,
+    setBeds,
+    setSunOrientation,
+    setSeeds,
+    setLayouts,
+  });
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === "Space") setIsSpacePressed(true);
-    };
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === "Space") setIsSpacePressed(false);
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
-    };
-  }, []);
+  const {
+    aiProvider,
+    aiModel,
+    aiApiKey,
+    aiProviders,
+    setAiProvider,
+    setAiModel,
+    setAiApiKey,
+    oauthStatus,
+    oauthChecking,
+    handleTriggerOAuth,
+    handleStartDeviceFlow,
+    handlePollDeviceFlow,
+    handleDisconnectProvider,
+  } = useAIProviders();
 
-  useEffect(() => {
-    const loadProviders = async () => {
-      try {
-        const res = await fetch(withServerUrl("/api/providers"));
-        if (!res.ok) return;
-        const data = await res.json();
-        if (Array.isArray(data?.providers)) {
-          setAiProviders(data.providers);
-        }
-      } catch (err) {
-        console.warn("Failed to load providers", err);
-      }
-    };
-
-    loadProviders();
-  }, []);
-
-  useEffect(() => {
-    let isActive = true;
-
-    const loadCatalog = async () => {
-      setCatalogLoading(true);
-      setCatalogError(null);
-      try {
-        const data = await fetchPlantCatalog();
-        if (isActive) setCatalog(data);
-      } catch (err) {
-        if (isActive) {
-          setCatalogError(
-            err instanceof Error ? err.message : "Failed to load catalog",
-          );
-          setCatalog(null);
-        }
-      } finally {
-        if (isActive) setCatalogLoading(false);
-      }
-    };
-
-    loadCatalog();
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
-
-  const plantMetadata = (catalog?.plants || {}) as Record<string, PlantMeta>;
-  const seedVarieties = (catalog?.varieties || []) as SeedVariety[];
-  const veggieTypes = Object.keys(plantMetadata) as VeggieType[];
-  const didInitSeeds = useRef(false);
-
-  useEffect(() => {
-    if (didInitSeeds.current) return;
-    if (seeds.length > 0) {
-      didInitSeeds.current = true;
-      return;
-    }
-    if (veggieTypes.length > 0) {
-      setSeeds(
-        veggieTypes.map((type) => ({
-          type,
-          priority: 3,
-          selectedVarieties: [],
-        })),
-      );
-      didInitSeeds.current = true;
-    }
-  }, [seeds.length, veggieTypes]);
-
-  useEffect(() => {
-    let isActive = true;
-
-    const checkOAuth = async () => {
-      setOauthChecking(true);
-      try {
-        const res = await fetch(
-          withServerUrl(`/oauth/${aiProvider}/connected`),
-        );
-        if (!res.ok) {
-          if (isActive) setOauthStatus(null);
-          return;
-        }
-        const data = await res.json();
-        if (isActive) {
-          setOauthStatus({
-            connected: Boolean(data?.connected),
-            expiresAt:
-              typeof data?.expiresAt === "number" ? data.expiresAt : null,
-          });
-        }
-      } catch (err) {
-        if (isActive) setOauthStatus(null);
-      } finally {
-        if (isActive) setOauthChecking(false);
-      }
-    };
-
-    checkOAuth();
-
-    return () => {
-      isActive = false;
-    };
-  }, [aiProvider]);
-
-  const handleSaveGarden = (name: string) => {
-    const data = { beds, sunOrientation };
-    localStorage.setItem(`garden_v1_${name}`, JSON.stringify(data));
-    if (!savedGardens.includes(name)) setSavedGardens([...savedGardens, name]);
-  };
-
-  const handleLoadGarden = (name: string) => {
-    const raw = localStorage.getItem(`garden_v1_${name}`);
-    if (raw) {
-      const data = JSON.parse(raw);
-      setBeds(data.beds);
-      setSunOrientation(data.sunOrientation);
-    }
-  };
-
-  const handleSavePlanting = (name: string) => {
-    const data = { seeds, layouts };
-    localStorage.setItem(`planting_v1_${name}`, JSON.stringify(data));
-    if (!savedPlantings.includes(name))
-      setSavedPlantings([...savedPlantings, name]);
-  };
-
-  const handleLoadPlanting = (name: string) => {
-    const raw = localStorage.getItem(`planting_v1_${name}`);
-    if (raw) {
-      const data = JSON.parse(raw);
-      setSeeds(data.seeds);
-      setLayouts(data.layouts);
-    }
-  };
-
-  const handleWheel = (e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      const delta = -e.deltaY;
-      const factor = Math.pow(1.1, delta / 100);
-      setZoom((prev) => Math.min(Math.max(prev * factor, 0.1), 5));
-    } else if (!isSpacePressed) {
-      setPan((prev) => ({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
-    }
-  };
-
-  const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    if (isSpacePressed || e.button === 1) {
-      setIsPanning(true);
-      e.preventDefault();
-    }
-  };
-
-  const [isDraggingBed, setIsDraggingBed] = useState(false);
-  const [draggedBedId, setDraggedBedId] = useState<string | null>(null);
-  const dragOffset = useRef({ x: 0, y: 0 });
+  const { onBedDragStart } = useBedDrag({
+    beds,
+    setBeds,
+    pan,
+    zoom,
+    isPanning,
+    setPan,
+    isSpacePressed,
+    setSelectedBedId,
+    setIsPanning,
+  });
 
   const handleAddBed = () => {
     const newId = Math.random().toString(36).substr(2, 9);
-    const rect = canvasRef.current?.getBoundingClientRect();
-    const centerX = rect ? (rect.width / 2 - pan.x) / zoom / GRID_SIZE : 10;
-    const centerY = rect ? (rect.height / 2 - pan.y) / zoom / GRID_SIZE : 10;
+    const { centerX, centerY } = getCenteredGridPoint(pan, zoom);
 
     setBeds((prev) => [
       ...prev,
@@ -316,141 +174,6 @@ const App: React.FC = () => {
       setIsGenerating(false);
     }
   };
-
-  const handleTriggerOAuth = (provider: string) => {
-    const redirect = encodeURIComponent(window.location.href);
-    window.location.href = withServerUrl(
-      `/oauth/${provider}/start?redirect=${redirect}`,
-    );
-  };
-
-  // Start a device-code flow for headless/dev environments.
-  // Returns minimal verification info or null on failure.
-  const handleStartDeviceFlow = async (provider: string) => {
-    if (!provider) return null;
-    try {
-      const res = await fetch(withServerUrl(`/oauth/${provider}/device/start`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!res.ok) return null;
-      const body = await res.json().catch(() => null);
-      if (!body) return null;
-      return {
-        key: body.key,
-        userCode: body.userCode || null,
-        verificationUri:
-          body.verificationUri || body.verificationUriComplete || null,
-        verificationUriComplete: body.verificationUriComplete || null,
-      };
-    } catch (err) {
-      console.warn("Device start failed", err);
-      return null;
-    }
-  };
-
-  // Poll device flow status once using the provided key.
-  // Returns the provider response (status/payload) or null on error.
-  const handlePollDeviceFlow = async (provider: string, key: string) => {
-    if (!provider || !key) return null;
-    try {
-      const res = await fetch(
-        withServerUrl(
-          `/oauth/${provider}/device/poll?key=${encodeURIComponent(key)}`,
-        ),
-        {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-      const payload = await res.json().catch(() => null);
-      return payload;
-    } catch (err) {
-      console.warn("Device poll failed", err);
-      return null;
-    }
-  };
-
-  // Disconnect provider by clearing the in-memory token on the server (dev-only).
-  // Returns true if a stored connection was removed.
-  const handleDisconnectProvider = async (provider: string) => {
-    if (!provider) return false;
-    try {
-      const res = await fetch(withServerUrl(`/oauth/${provider}/disconnect`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!res.ok) return false;
-      const body = await res.json().catch(() => null);
-      return Boolean(body?.disconnected);
-    } catch (err) {
-      console.warn("Disconnect failed", err);
-      return false;
-    }
-  };
-
-  const onBedDragStart = (e: React.MouseEvent, id: string) => {
-    if (isSpacePressed) return;
-    const bed = beds.find((b) => b.id === id);
-    if (!bed) return;
-    setIsDraggingBed(true);
-    setDraggedBedId(id);
-    setSelectedBedId(id);
-
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    dragOffset.current = {
-      x: (e.clientX - rect.left) / (GRID_SIZE * zoom),
-      y: (e.clientY - rect.top) / (GRID_SIZE * zoom),
-    };
-    e.stopPropagation();
-  };
-
-  const onMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (isPanning) {
-        setPan((prev) => ({
-          x: prev.x + e.movementX,
-          y: prev.y + e.movementY,
-        }));
-        return;
-      }
-
-      if (!isDraggingBed || !draggedBedId) return;
-      const gridContainer = document.getElementById("garden-viewport");
-      if (!gridContainer) return;
-
-      const rect = gridContainer.getBoundingClientRect();
-      const rawX =
-        (e.clientX - rect.left - pan.x) / (GRID_SIZE * zoom) -
-        dragOffset.current.x;
-      const rawY =
-        (e.clientY - rect.top - pan.y) / (GRID_SIZE * zoom) -
-        dragOffset.current.y;
-
-      const x = Math.max(0, Math.round(rawX));
-      const y = Math.max(0, Math.round(rawY));
-
-      setBeds((prev) =>
-        prev.map((b) => (b.id === draggedBedId ? { ...b, x, y } : b)),
-      );
-    },
-    [isDraggingBed, draggedBedId, isPanning, pan, zoom],
-  );
-
-  const onMouseUp = useCallback(() => {
-    setIsDraggingBed(false);
-    setDraggedBedId(null);
-    setIsPanning(false);
-  }, []);
-
-  useEffect(() => {
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-    };
-  }, [onMouseMove, onMouseUp]);
 
   const selectedBed = beds.find((b) => b.id === selectedBedId);
 
