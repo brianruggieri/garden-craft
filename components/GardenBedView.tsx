@@ -45,31 +45,82 @@ const GardenBedView: React.FC<GardenBedViewProps> = ({
     const { dx, dy } = bedShadow;
     const w = widthPx;
     const h = heightPx;
-    const minX = Math.min(0, dx);
-    const minY = Math.min(0, dy);
-    const maxX = Math.max(w, w + dx);
-    const maxY = Math.max(h, h + dy);
-    const points = [
-      [0 - minX, 0 - minY],
-      [w - minX, 0 - minY],
-      [w - minX, h - minY],
-      [0 - minX, h - minY],
-      [dx - minX, dy - minY],
-      [dx + w - minX, dy - minY],
-      [dx + w - minX, dy + h - minY],
-      [dx - minX, dy + h - minY],
-    ];
+
+    const basePoints = (() => {
+      if (bed.shape === "circle") {
+        const r = Math.min(w, h) / 2;
+        const cx = w / 2;
+        const cy = h / 2;
+        const steps = 36;
+        const pts: number[][] = [];
+        for (let i = 0; i < steps; i++) {
+          const t = (i / steps) * Math.PI * 2;
+          pts.push([cx + Math.cos(t) * r, cy + Math.sin(t) * r]);
+        }
+        return pts;
+      }
+      if (bed.shape === "pill") {
+        const r = Math.min(w, h) / 2;
+        const steps = 20;
+        const pts: number[][] = [];
+        if (w >= h) {
+          const cy = h / 2;
+          const leftCx = r;
+          const rightCx = w - r;
+          for (let i = 0; i <= steps; i++) {
+            const t = Math.PI / 2 + (i / steps) * Math.PI;
+            pts.push([leftCx + Math.cos(t) * r, cy + Math.sin(t) * r]);
+          }
+          for (let i = 0; i <= steps; i++) {
+            const t = (i / steps) * Math.PI - Math.PI / 2;
+            pts.push([rightCx + Math.cos(t) * r, cy + Math.sin(t) * r]);
+          }
+        } else {
+          const cx = w / 2;
+          const topCy = r;
+          const bottomCy = h - r;
+          for (let i = 0; i <= steps; i++) {
+            const t = Math.PI + (i / steps) * Math.PI;
+            pts.push([cx + Math.cos(t) * r, topCy + Math.sin(t) * r]);
+          }
+          for (let i = 0; i <= steps; i++) {
+            const t = (i / steps) * Math.PI;
+            pts.push([cx + Math.cos(t) * r, bottomCy + Math.sin(t) * r]);
+          }
+        }
+        return pts;
+      }
+      return [
+        [0, 0],
+        [w, 0],
+        [w, h],
+        [0, h],
+      ];
+    })();
+
+    const points = basePoints.concat(
+      basePoints.map((p) => [p[0] + dx, p[1] + dy]),
+    );
+
+    const minX = Math.min(...points.map((p) => p[0]));
+    const minY = Math.min(...points.map((p) => p[1]));
+    const maxX = Math.max(...points.map((p) => p[0]));
+    const maxY = Math.max(...points.map((p) => p[1]));
+
+    const shifted = points.map((p) => [p[0] - minX, p[1] - minY]);
 
     const cross = (o: number[], a: number[], b: number[]) =>
       (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
 
-    const sorted = points
+    const sorted = shifted
       .slice()
       .sort((a, b) => (a[0] === b[0] ? a[1] - b[1] : a[0] - b[0]));
     const lower: number[][] = [];
     for (const p of sorted) {
-      while (lower.length >= 2 &&
-        cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+      while (
+        lower.length >= 2 &&
+        cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0
+      ) {
         lower.pop();
       }
       lower.push(p);
@@ -77,8 +128,10 @@ const GardenBedView: React.FC<GardenBedViewProps> = ({
     const upper: number[][] = [];
     for (let i = sorted.length - 1; i >= 0; i--) {
       const p = sorted[i];
-      while (upper.length >= 2 &&
-        cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+      while (
+        upper.length >= 2 &&
+        cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0
+      ) {
         upper.pop();
       }
       upper.push(p);

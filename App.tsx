@@ -409,6 +409,11 @@ const App: React.FC = () => {
             hasTarget: true,
           };
           dynamicTarget = true;
+        } else if (!spriteTarget.current.hasTarget) {
+          spriteTarget.current = {
+            ...pickEdgeTarget(),
+            hasTarget: true,
+          };
         }
 
         const target = spriteTarget.current;
@@ -473,7 +478,12 @@ const App: React.FC = () => {
         const clampedX = Math.max(safeMin, Math.min(safeMax, nx));
         const clampedY = Math.max(safeMin, Math.min(safeMax, ny));
 
-        if (
+        if (dynamicTarget && lastBall) {
+          const distToBall = Math.hypot(lastBall.x - clampedX, lastBall.y - clampedY);
+          if (distToBall < spriteTargetHeight * 0.55) {
+            spriteTarget.current.hasTarget = false;
+          }
+        } else if (
           clampedX <= safeMin + 1 ||
           clampedX >= safeMax - 1 ||
           clampedY <= safeMin + 1 ||
@@ -599,7 +609,9 @@ const App: React.FC = () => {
     el.style.backgroundRepeat = "no-repeat";
     el.style.boxShadow = "0 6px 18px rgba(2,6,23,0.2)";
     el.style.borderRadius = "50%";
-    el.style.transform = "translateZ(0)";
+    el.style.transform = "translateZ(0) scale(0.85)";
+    el.style.opacity = "0";
+    el.style.transition = "opacity 120ms ease-out, transform 120ms ease-out";
     return el;
   };
 
@@ -617,6 +629,8 @@ const App: React.FC = () => {
     const canvasWidth = GRID_PIXEL_SIZE;
     const canvasHeight = GRID_PIXEL_SIZE;
     const damping = 0.8;
+    const restitution = 0.72;
+    const wallFriction = 0.96;
     const speedThreshold = 6;
 
     const bedRects = beds.map((bed) => {
@@ -659,6 +673,32 @@ const App: React.FC = () => {
       } else {
         b.x = nextX;
         b.y = nextY;
+      }
+
+      // Bounce off grid boundaries (simple rigid-body style).
+      const minX = ballRadiusCanvas;
+      const maxX = canvasWidth - ballRadiusCanvas;
+      const minY = ballRadiusCanvas;
+      const maxY = canvasHeight - ballRadiusCanvas;
+
+      if (b.x < minX) {
+        b.x = minX;
+        b.vx = Math.abs(b.vx) * restitution;
+        b.vy *= wallFriction;
+      } else if (b.x > maxX) {
+        b.x = maxX;
+        b.vx = -Math.abs(b.vx) * restitution;
+        b.vy *= wallFriction;
+      }
+
+      if (b.y < minY) {
+        b.y = minY;
+        b.vy = Math.abs(b.vy) * restitution;
+        b.vx *= wallFriction;
+      } else if (b.y > maxY) {
+        b.y = maxY;
+        b.vy = -Math.abs(b.vy) * restitution;
+        b.vx *= wallFriction;
       }
 
       b.elem.style.left = `${b.x - ballRadiusCanvas}px`;
@@ -744,6 +784,10 @@ const App: React.FC = () => {
     ) as HTMLElement | null;
     const appendTarget = gridBoundary ?? canvasRef.current;
     appendTarget?.appendChild(elem);
+    requestAnimationFrame(() => {
+      elem.style.opacity = "1";
+      elem.style.transform = "translateZ(0) scale(1)";
+    });
 
     const ball = { id, x: canvasX, y: canvasY, vx, vy, elem };
     thrownBallsRef.current.push(ball);
@@ -790,6 +834,7 @@ const App: React.FC = () => {
     touchCountRef.current = e.touches.length;
     if (e.touches.length > 1 || isSpacePressed) {
       setIsPanning(true);
+      e.preventDefault();
       return;
     }
     const t = e.touches[0];
@@ -797,6 +842,7 @@ const App: React.FC = () => {
     dragStartRef.current = { x: t.clientX, y: t.clientY };
     dragCurrentRef.current = { x: t.clientX, y: t.clientY };
     setPointerPos({ x: t.clientX, y: t.clientY });
+    e.preventDefault();
     e.stopPropagation();
   };
 
@@ -808,6 +854,7 @@ const App: React.FC = () => {
     const t = e.touches[0];
     dragCurrentRef.current = { x: t.clientX, y: t.clientY };
     setPointerPos({ x: t.clientX, y: t.clientY });
+    e.preventDefault();
     e.stopPropagation();
   };
 
@@ -896,6 +943,16 @@ const App: React.FC = () => {
   }, []);
 
   // --- Render ---
+  const dragPreviewCanvas = (() => {
+    if (!isDraggingBall || !dragCurrentRef.current) return null;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    return {
+      x: (dragCurrentRef.current.x - rect.left - pan.x) / zoom,
+      y: (dragCurrentRef.current.y - rect.top - pan.y) / zoom,
+    };
+  })();
+
   return (
     <div className="flex h-screen w-full bg-[#f8fafc] overflow-hidden select-none text-slate-800">
       <ControlPanel
@@ -957,7 +1014,13 @@ const App: React.FC = () => {
           id="garden-viewport"
           ref={canvasRef}
           className={`flex-1 relative overflow-hidden bg-[#cbd5e1] cursor-default ${isPanning || isSpacePressed ? "cursor-grabbing" : ""}`}
-          onWheel={handleWheel}
+          style={{ overscrollBehavior: "contain" }}
+          onWheel={(e) => {
+            if (isPanning || isSpacePressed || ballMode || isDraggingBall) {
+              e.preventDefault();
+            }
+            handleWheel(e);
+          }}
           onMouseDown={(e) => {
             // If requesting pan (Space or middle button) while in ball mode delegate to pan handler
             if (ballMode && (isSpacePressed || e.button === 1)) {
@@ -985,6 +1048,11 @@ const App: React.FC = () => {
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          onTouchCancel={(e) => {
+            if (ballMode && (isDraggingBall || isPanning)) {
+              e.preventDefault();
+            }
+          }}
           onClick={() => setSelectedBedId(null)}
         >
           <div
@@ -1035,6 +1103,22 @@ const App: React.FC = () => {
                   />
                 </div>
               </div>
+            )}
+
+            {dragPreviewCanvas && (
+              <div
+                className="absolute pointer-events-none z-50"
+                style={{
+                  left: dragPreviewCanvas.x - BALL_DIAMETER_CANVAS / 2,
+                  top: dragPreviewCanvas.y - BALL_DIAMETER_CANVAS / 2,
+                  width: BALL_DIAMETER_CANVAS,
+                  height: BALL_DIAMETER_CANVAS,
+                  borderRadius: 999,
+                  backgroundImage: "url('/secret/ball.png')",
+                  backgroundSize: "cover",
+                  transform: "translateZ(0)",
+                }}
+              />
             )}
 
             {beds.map((bed) => (
@@ -1177,23 +1261,6 @@ const App: React.FC = () => {
                   strokeLinecap="round"
                 />
               </svg>
-
-              <div
-                style={
-                  {
-                    position: "absolute",
-                    left: `${(dragCurrentRef.current.x - (canvasRef.current?.getBoundingClientRect().left ?? 0) - pan.x) / zoom - BALL_DIAMETER_CANVAS / 2}px`,
-                    top: `${(dragCurrentRef.current.y - (canvasRef.current?.getBoundingClientRect().top ?? 0) - pan.y) / zoom - BALL_DIAMETER_CANVAS / 2}px`,
-                    width: BALL_DIAMETER_CANVAS,
-                    height: BALL_DIAMETER_CANVAS,
-                    borderRadius: 999,
-                    backgroundImage: "url('/secret/ball.png')",
-                    backgroundSize: "cover",
-                    transform: "translateZ(0)",
-                    pointerEvents: "none",
-                  } as React.CSSProperties
-                }
-              />
             </div>
           )}
         </div>
