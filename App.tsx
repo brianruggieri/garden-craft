@@ -63,7 +63,7 @@ const App: React.FC = () => {
     },
   ]);
   const [seeds, setSeeds] = useState<Vegetable[]>([]);
-  const [sunOrientation, setSunOrientation] = useState<SunOrientation>("South");
+  const [sunOrientation, setSunOrientation] = useState<SunOrientation>("East");
   const [sunAngle, setSunAngleState] = useState(90);
   const [sunEnabled, setSunEnabled] = useState(true);
   const [layouts, setLayouts] = useState<BedLayout[]>([]);
@@ -121,10 +121,11 @@ const App: React.FC = () => {
 
   // Ball sizing (6" base scaled by factor)
   const BALL_BASE_INCHES = 6;
-  const BALL_SCALE = 2.5; // final requested scale
+  const BALL_SCALE = 2.125; // 15% smaller than 2.5
   const BALL_DIAMETER_INCHES = BALL_BASE_INCHES * BALL_SCALE;
   const BALL_DIAMETER_CANVAS =
     (BALL_DIAMETER_INCHES / INCHES_PER_GRID) * GRID_SIZE;
+  const BALL_IMAGE = "/secret/ball.png";
 
   const {
     savedGardens,
@@ -479,7 +480,10 @@ const App: React.FC = () => {
         const clampedY = Math.max(safeMin, Math.min(safeMax, ny));
 
         if (dynamicTarget && lastBall) {
-          const distToBall = Math.hypot(lastBall.x - clampedX, lastBall.y - clampedY);
+          const distToBall = Math.hypot(
+            lastBall.x - clampedX,
+            lastBall.y - clampedY,
+          );
           if (distToBall < spriteTargetHeight * 0.55) {
             spriteTarget.current.hasTarget = false;
           }
@@ -604,10 +608,10 @@ const App: React.FC = () => {
     el.style.height = `${size}px`;
     el.style.pointerEvents = "none";
     el.style.zIndex = "60";
-    el.style.backgroundImage = `url('/secret/ball.png')`;
+    el.style.backgroundImage = `url('${BALL_IMAGE}')`;
     el.style.backgroundSize = "cover";
     el.style.backgroundRepeat = "no-repeat";
-    el.style.boxShadow = "0 6px 18px rgba(2,6,23,0.2)";
+    el.style.filter = "drop-shadow(0 6px 14px rgba(15,23,42,0.25))";
     el.style.borderRadius = "50%";
     el.style.transform = "translateZ(0) scale(0.85)";
     el.style.opacity = "0";
@@ -1062,13 +1066,13 @@ const App: React.FC = () => {
               width: `${GRID_PIXEL_SIZE}px`,
               height: `${GRID_PIXEL_SIZE}px`,
               backgroundImage: backgroundTile?.url
-                ? `radial-gradient(${dotColor} 1.5px, transparent 1.5px), url(${backgroundTile.url})`
+                ? `radial-gradient(${dotColor} 1.5px, transparent 1.5px), linear-gradient(rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.45)), url(${backgroundTile.url})`
                 : `radial-gradient(${dotColor} 1.5px, transparent 1.5px)`,
               backgroundSize: backgroundTile?.url
-                ? `${GRID_SIZE}px ${GRID_SIZE}px, 256px 256px`
+                ? `${GRID_SIZE}px ${GRID_SIZE}px, 100% 100%, 256px 256px`
                 : `${GRID_SIZE}px ${GRID_SIZE}px`,
               backgroundRepeat: backgroundTile?.url
-                ? "repeat, repeat"
+                ? "repeat, no-repeat, repeat"
                 : "repeat",
             }}
           >
@@ -1114,7 +1118,7 @@ const App: React.FC = () => {
                   width: BALL_DIAMETER_CANVAS,
                   height: BALL_DIAMETER_CANVAS,
                   borderRadius: 999,
-                  backgroundImage: "url('/secret/ball.png')",
+                  backgroundImage: `url('${BALL_IMAGE}')`,
                   backgroundSize: "cover",
                   transform: "translateZ(0)",
                 }}
@@ -1180,9 +1184,8 @@ const App: React.FC = () => {
               <span>1 ft = {(12 / INCHES_PER_GRID).toFixed(0)} dots</span>
             </div>
           </div>
-          {/* Exposed secret button for testing */}
           {isGrassVibe && (
-            <>
+            <div className="absolute bottom-8 left-8 z-50 flex items-center gap-3">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -1193,7 +1196,6 @@ const App: React.FC = () => {
                   toggleBallMode();
                 }}
                 onKeyDown={(e) => {
-                  // Prevent Space from toggling the button while ballMode active
                   if (
                     ballMode &&
                     (e.key === " " ||
@@ -1207,26 +1209,37 @@ const App: React.FC = () => {
                 title="Toggle Ball Mode"
                 aria-pressed={ballMode}
                 aria-label="Toggle Ball Mode"
-                className="absolute top-4 left-4 w-10 h-10 rounded-md bg-amber-500 text-white z-50 flex items-center justify-center shadow-lg border border-amber-600"
+                className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all border ${
+                  ballMode
+                    ? "bg-amber-500 text-white border-amber-600 shadow-lg shadow-amber-200"
+                    : "bg-white text-amber-700 border-slate-200 hover:bg-amber-50"
+                }`}
               >
-                <span style={{ fontSize: 18, lineHeight: 1 }}>
-                  {ballMode ? "🎾" : "🐶"}
-                </span>
+                <i className="fas fa-paw"></i>
               </button>
-
-              {ballMode && (
-                <div className="absolute top-6 left-28 bg-white/90 text-xs px-2 py-1 rounded shadow z-50 pointer-events-none">
-                  <div className="font-semibold">Ball mode</div>
-                  {showBallHint && (
-                    <div className="mt-1 text-[11px] font-normal">
-                      Left-drag to fling. Hold{" "}
-                      <span className="font-mono">Space</span> or use Middle
-                      Mouse to Pan. Two-finger drag to Pan on touch.
-                    </div>
-                  )}
+              <div className="bg-white/95 backdrop-blur-sm rounded-2xl border border-slate-200 shadow-xl px-3 py-2 text-xs">
+                <div className="flex items-center gap-2 font-black uppercase tracking-widest text-slate-500">
+                  <i className="fas fa-tennis-ball text-amber-500"></i>
+                  <span>Ball Mode</span>
+                  <span
+                    className={`ml-1 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-black ${
+                      ballMode
+                        ? "bg-emerald-600 text-white"
+                        : "bg-slate-200 text-slate-600"
+                    }`}
+                  >
+                    {ballMode ? "On" : "Off"}
+                  </span>
                 </div>
-              )}
-            </>
+                {showBallHint && (
+                  <div className="mt-1 text-[11px] font-normal text-slate-600">
+                    Left-drag to fling. Hold{" "}
+                    <span className="font-mono">Space</span> or use Middle Mouse
+                    to pan. Two-finger drag to pan on touch.
+                  </div>
+                )}
+              </div>
+            </div>
           )}
 
           {/* Drag preview */}
@@ -1265,15 +1278,12 @@ const App: React.FC = () => {
           )}
         </div>
 
-        <VeggieLegend
-          veggieTypes={veggieTypes}
-          plantMetadata={plantMetadata}
-        />
+        <VeggieLegend veggieTypes={veggieTypes} plantMetadata={plantMetadata} />
       </main>
 
       <style>{`
         #garden-viewport.ball-cursor-mode, #garden-viewport.ball-cursor-mode * {
-          cursor: url('/secret/ball.png') 16 16, auto !important;
+          cursor: url('${BALL_IMAGE}') 16 16, auto !important;
         }
       `}</style>
     </div>
