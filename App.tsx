@@ -434,31 +434,39 @@ const App: React.FC = () => {
 
         let frame = 0;
         let flip = false;
-        let minDelta = 360;
-        const angles = spriteAngles.current.length
-          ? spriteAngles.current
-          : spriteFrames.map(() => 0);
-        angles.forEach((spriteAngle, idx) => {
-          const direct = Math.min(
-            Math.abs(spriteAngle - normalized),
-            360 - Math.abs(spriteAngle - normalized),
-          );
-          const flippedAngle = (spriteAngle + 180) % 360;
-          const flipped = Math.min(
-            Math.abs(flippedAngle - normalized),
-            360 - Math.abs(flippedAngle - normalized),
-          );
-          if (direct < minDelta) {
-            minDelta = direct;
-            frame = idx;
-            flip = false;
-          }
-          if (flipped < minDelta) {
-            minDelta = flipped;
-            frame = idx;
-            flip = true;
-          }
-        });
+
+        // Ensure dog-4 sprite (index 3) is used when moving upward.
+        const isUpward = normalized >= 225 && normalized <= 315;
+        if (isUpward) {
+          frame = 3;
+          flip = false;
+        } else {
+          let minDelta = 360;
+          const angles = spriteAngles.current.length
+            ? spriteAngles.current
+            : spriteFrames.map(() => 0);
+          angles.forEach((spriteAngle, idx) => {
+            const direct = Math.min(
+              Math.abs(spriteAngle - normalized),
+              360 - Math.abs(spriteAngle - normalized),
+            );
+            const flippedAngle = (spriteAngle + 180) % 360;
+            const flipped = Math.min(
+              Math.abs(flippedAngle - normalized),
+              360 - Math.abs(flippedAngle - normalized),
+            );
+            if (direct < minDelta) {
+              minDelta = direct;
+              frame = idx;
+              flip = false;
+            }
+            if (flipped < minDelta) {
+              minDelta = flipped;
+              frame = idx;
+              flip = true;
+            }
+          });
+        }
 
         const safeMin = spriteTargetHeight * 0.6;
         const safeMax = GRID_PIXEL_SIZE - safeMin;
