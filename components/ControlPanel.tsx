@@ -74,11 +74,9 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   onChangeBackgroundTile,
   aiProvider,
   aiModel,
-  aiApiKey,
   aiProviders,
   onChangeAIProvider,
   onChangeAIModel,
-  onChangeAIApiKey,
   onTriggerOAuth,
   oauthStatus,
   oauthChecking,
@@ -87,6 +85,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     null,
   );
   const [showVault, setShowVault] = useState(false);
+  const [showAISettings, setShowAISettings] = useState(false);
 
   // Device flow UI state (for provider device-code sign-in)
   const [deviceKey, setDeviceKey] = useState<string | null>(null);
@@ -450,179 +449,166 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
             <section>
               <h2 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2">
-                <i className="fas fa-sliders text-indigo-500"></i> AI Settings
+                <i className="fas fa-sliders text-indigo-500"></i> Settings Home
               </h2>
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                    Provider
-                  </label>
-                  <select
-                    value={aiProvider}
-                    onChange={(e) => onChangeAIProvider(e.target.value)}
-                    className="w-full text-xs font-semibold bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                  >
-                    {providerOptions.map((provider) => (
-                      <option key={provider.id} value={provider.id}>
-                        {provider.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                    Model
-                  </label>
-                  <input
-                    type="text"
-                    value={aiModel}
-                    onChange={(e) => onChangeAIModel(e.target.value)}
-                    placeholder="Optional model override"
-                    className="w-full text-xs font-semibold bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                    API Key
-                  </label>
-                  <input
-                    type="password"
-                    value={aiApiKey}
-                    onChange={(e) => onChangeAIApiKey(e.target.value)}
-                    placeholder="Paste API key (optional)"
-                    className="w-full text-xs font-semibold bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 items-center">
-                  <div className="flex items-center justify-between gap-2">
-                    {/* Primary: redirect-based OAuth (existing) */}
-                    <button
-                      onClick={() => onTriggerOAuth(aiProvider)}
-                      disabled={!oauthEnabled}
-                      className={`text-[10px] font-bold px-3 py-2 rounded-lg border transition-all flex items-center gap-2 ${
-                        oauthEnabled
-                          ? "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
-                          : "bg-slate-50 text-slate-300 border-slate-200 cursor-not-allowed"
-                      }`}
-                      title="Start browser-based OAuth flow (uses server redirect)"
-                    >
-                      <i className="fas fa-link"></i> Connect OAuth
-                    </button>
-
-                    {/* Device flow: headless/device sign-in */}
-                    <button
-                      onClick={() => startDeviceFlow()}
-                      disabled={!oauthEnabled}
-                      className={`text-[10px] font-bold px-3 py-2 rounded-lg border transition-all flex items-center gap-2 ${
-                        oauthEnabled
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
-                          : "bg-slate-50 text-slate-300 border-slate-200 cursor-not-allowed"
-                      }`}
-                      title="Start device code sign-in (for headless or remote environments)"
-                    >
-                      <i className="fas fa-terminal"></i> Device Sign‑in
-                    </button>
-
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                      Server OAuth
-                    </span>
+              <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-black uppercase tracking-widest text-slate-700">
+                      AI Connections
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      OAuth manages provider keys. Manual API keys are no longer
+                      required.
+                    </p>
                   </div>
+                  <button
+                    onClick={() => setShowAISettings((prev) => !prev)}
+                    className="text-[10px] font-bold px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600"
+                  >
+                    {showAISettings ? "Hide" : "Manage"}
+                  </button>
+                </div>
 
-                  <div className="flex flex-col items-end gap-1">
-                    <div className="flex items-center gap-3">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                        API Key
+                <div className="mt-3 flex items-center gap-2 flex-wrap">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                    Provider
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-700">
+                    {selectedProvider?.name || "Not set"}
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-1 rounded-full border ${
+                      oauthChecking
+                        ? "bg-slate-50 text-slate-500 border-slate-200"
+                        : oauthStatus?.connected
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : "bg-amber-50 text-amber-700 border-amber-200"
+                    }`}
+                  >
+                    {oauthChecking
+                      ? "Checking"
+                      : oauthStatus?.connected
+                        ? "Connected"
+                        : "Not connected"}
+                  </span>
+                </div>
+
+                {showAISettings && (
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        Provider
+                      </label>
+                      <select
+                        value={aiProvider}
+                        onChange={(e) => onChangeAIProvider(e.target.value)}
+                        className="w-full text-xs font-semibold bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      >
+                        {providerOptions.map((provider) => (
+                          <option key={provider.id} value={provider.id}>
+                            {provider.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        Model
+                      </label>
+                      <input
+                        type="text"
+                        value={aiModel}
+                        onChange={(e) => onChangeAIModel(e.target.value)}
+                        placeholder="Optional model override"
+                        className="w-full text-xs font-semibold bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => onTriggerOAuth(aiProvider)}
+                        disabled={!oauthEnabled}
+                        className={`text-[10px] font-bold px-3 py-2 rounded-lg border transition-all flex items-center justify-center gap-2 ${
+                          oauthEnabled
+                            ? "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
+                            : "bg-slate-50 text-slate-300 border-slate-200 cursor-not-allowed"
+                        }`}
+                        title="Start browser-based OAuth flow (uses server redirect)"
+                      >
+                        <i className="fas fa-link"></i> Connect OAuth
+                      </button>
+
+                      <button
+                        onClick={() => startDeviceFlow()}
+                        disabled={!oauthEnabled}
+                        className={`text-[10px] font-bold px-3 py-2 rounded-lg border transition-all flex items-center justify-center gap-2 ${
+                          oauthEnabled
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                            : "bg-slate-50 text-slate-300 border-slate-200 cursor-not-allowed"
+                        }`}
+                        title="Start device code sign-in (for headless or remote environments)"
+                      >
+                        <i className="fas fa-terminal"></i> Device Sign‑in
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-500">
+                      <span>
+                        {oauthEnabled
+                          ? "OAuth available for this provider."
+                          : "OAuth not required for this provider."}
                       </span>
-                      {aiApiKey ? (
-                        <span className="text-emerald-600 text-[11px] font-bold">
-                          Present
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 text-[11px]">
-                          Not set
-                        </span>
+                      {oauthStatus?.connected && (
+                        <button
+                          onClick={() => disconnectProvider()}
+                          className="text-[10px] px-2 py-1 rounded bg-red-50 text-red-700 border border-red-100 hover:bg-red-100"
+                          title="Disconnect server-stored OAuth token"
+                        >
+                          Disconnect
+                        </button>
                       )}
                     </div>
 
-                    <div className="text-[11px] flex items-center gap-3">
-                      {oauthChecking ? (
-                        <span className="text-slate-400">OAuth: Checking…</span>
-                      ) : oauthStatus?.connected ? (
-                        <>
-                          <span className="text-emerald-600">
-                            OAuth: Connected
+                    {deviceKey && (
+                      <div className="rounded-lg border border-slate-200 bg-white p-3 text-[10px]">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-bold text-slate-600 uppercase tracking-widest">
+                            Device Sign‑In
                           </span>
                           <button
-                            onClick={() => disconnectProvider()}
-                            className="text-[10px] px-2 py-1 ml-2 rounded bg-red-50 text-red-700 border border-red-100 hover:bg-red-100"
-                            title="Disconnect server-stored OAuth token"
+                            onClick={cancelDeviceFlow}
+                            className="text-[10px] font-bold text-slate-400 hover:text-slate-600"
                           >
-                            Disconnect
+                            Cancel
                           </button>
-                        </>
-                      ) : (
-                        <span className="text-slate-400">
-                          OAuth: Not connected
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Device flow UI: show user code and verification link when active */}
-                    {deviceKey && (
-                      <div className="mt-2 p-3 bg-slate-50 border border-slate-100 rounded w-full text-xs text-slate-700">
-                        <div className="flex items-center justify-between mb-2">
-                          <div>
-                            <div className="text-[10px] font-bold text-slate-500 uppercase">
-                              Device Sign-In
-                            </div>
-                            <div className="mt-1">
-                              <strong>Code:</strong>{" "}
-                              <span className="ml-1 font-mono bg-white px-2 py-1 rounded border">
-                                {userCode}
-                              </span>
-                            </div>
-                            {verificationUri && (
-                              <div className="mt-1">
-                                <a
-                                  href={verificationUri}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-indigo-600 hover:underline"
-                                >
-                                  Open verification URL
-                                </a>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="text-right">
-                            <div className="text-[11px] font-bold">
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">Status</span>
+                            <span className="font-bold text-slate-700">
                               {deviceStatus === "pending"
-                                ? "Waiting..."
+                                ? "Waiting…"
                                 : deviceStatus}
+                            </span>
+                          </div>
+                          {verificationUri && (
+                            <div className="text-slate-500 truncate">
+                              {verificationUri}
                             </div>
-                            <div className="text-[10px] text-slate-400 mt-1">
-                              Poll interval: {deviceInterval}s
-                            </div>
-                            <div className="mt-2 flex gap-2 justify-end">
-                              <button
-                                onClick={() => {
-                                  cancelDeviceFlow();
-                                }}
-                                className="text-[10px] px-2 py-1 rounded bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200"
-                              >
-                                Cancel
-                              </button>
-                            </div>
+                          )}
+                          <div className="text-lg font-black tracking-widest text-emerald-700">
+                            {userCode || "----"}
+                          </div>
+                          <div className="text-[9px] text-slate-400">
+                            Poll interval: {deviceInterval}s
                           </div>
                         </div>
                       </div>
                     )}
                   </div>
-                </div>
+                )}
               </div>
             </section>
 
