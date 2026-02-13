@@ -407,6 +407,17 @@ const App: React.FC = () => {
             </button>
           </div>
 
+          <div className="absolute bottom-8 right-8 bg-white/95 backdrop-blur-sm rounded-2xl border border-slate-200 shadow-xl px-4 py-3 z-30">
+            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+              <i className="fas fa-ruler-combined text-emerald-600"></i> Scale
+            </div>
+            <div className="mt-2 flex items-center gap-3 text-[11px] font-bold text-slate-700">
+              <span>{INCHES_PER_GRID}" per dot</span>
+              <span className="text-slate-300">•</span>
+              <span>1 ft = {(12 / INCHES_PER_GRID).toFixed(0)} dots</span>
+            </div>
+          </div>
+
           <div className="absolute top-8 right-8 flex flex-col items-center opacity-80 pointer-events-none z-30">
             <div className="text-[12px] font-black mb-1 text-slate-900 tracking-tighter">
               N
