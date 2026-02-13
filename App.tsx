@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   GardenBed,
   Vegetable,
@@ -55,6 +55,23 @@ const App: React.FC = () => {
   >([]);
   const [backgroundTileId, setBackgroundTileId] = useState("none");
   const [dotColor, setDotColor] = useState("rgba(148, 163, 184, 0.9)");
+  const spriteFrames = [
+    "/secret/Gemini_Generated_Image_8qvzby8qvzby8qvz.png",
+    "/secret/Gemini_Generated_Image_byin4lbyin4lbyin.png",
+    "/secret/Gemini_Generated_Image_nvkov0nvkov0nvko.png",
+    "/secret/Gemini_Generated_Image_xrk9v0xrk9v0xrk9.png",
+  ];
+  const spriteSize = 56;
+  const [spriteState, setSpriteState] = useState({
+    x: 0,
+    y: 0,
+    frame: 0,
+    flip: false,
+    visible: false,
+  });
+  const spriteTarget = useRef({ x: 0, y: 0, hasTarget: false });
+  const spriteLastTime = useRef<number | null>(null);
+  const spriteFrameTime = useRef(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -100,6 +117,121 @@ const App: React.FC = () => {
     backgroundTiles.find((tile) => tile.id === backgroundTileId) ??
     backgroundTiles[0];
 
+  const {
+    zoom,
+    pan,
+    isPanning,
+    isSpacePressed,
+    canvasRef,
+    setZoom,
+    setPan,
+    setIsPanning,
+    setIsSpacePressed,
+    handleWheel,
+    handleCanvasMouseDown,
+    getCenteredGridPoint,
+    centerCanvas,
+  } = useCanvasNavigation();
+
+  const getViewportBounds = () => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    const left = -pan.x / zoom;
+    const top = -pan.y / zoom;
+    const right = (rect.width - pan.x) / zoom;
+    const bottom = (rect.height - pan.y) / zoom;
+    return { left, top, right, bottom };
+  };
+
+  const pickEdgeTarget = () => {
+    const bounds = getViewportBounds();
+    if (!bounds) return { x: 0, y: 0 };
+    const { left, top, right, bottom } = bounds;
+    const inset = 40;
+    const offset = 28;
+    const edge = Math.floor(Math.random() * 4);
+    const rand = (min: number, max: number) =>
+      min + Math.random() * Math.max(1, max - min);
+    if (edge === 0) {
+      return { x: rand(left + inset, right - inset), y: top - offset };
+    }
+    if (edge === 1) {
+      return { x: right + offset, y: rand(top + inset, bottom - inset) };
+    }
+    if (edge === 2) {
+      return { x: rand(left + inset, right - inset), y: bottom + offset };
+    }
+    return { x: left - offset, y: rand(top + inset, bottom - inset) };
+  };
+
+  useEffect(() => {
+    let raf = 0;
+    const tick = (time: number) => {
+      if (spriteLastTime.current === null) spriteLastTime.current = time;
+      const dt = Math.min(64, time - spriteLastTime.current);
+      spriteLastTime.current = time;
+
+      const panDistance = Math.hypot(pan.x, pan.y);
+      const visible = panDistance > 200 || Math.abs(zoom - 1) > 0.05;
+
+      if (!visible) {
+        setSpriteState((prev) => ({ ...prev, visible: false }));
+        spriteTarget.current.hasTarget = false;
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+
+      if (!spriteTarget.current.hasTarget) {
+        spriteTarget.current = {
+          ...pickEdgeTarget(),
+          hasTarget: true,
+        };
+      }
+
+      setSpriteState((prev) => {
+        const target = spriteTarget.current;
+        const dx = target.x - prev.x;
+        const dy = target.y - prev.y;
+        const dist = Math.hypot(dx, dy);
+        const speed = 0.08;
+        const step = Math.min(dist, speed * dt);
+        const nx = dist > 1 ? prev.x + (dx / dist) * step : prev.x;
+        const ny = dist > 1 ? prev.y + (dy / dist) * step : prev.y;
+
+        if (dist < 18) {
+          spriteTarget.current = {
+            ...pickEdgeTarget(),
+            hasTarget: true,
+          };
+        }
+
+        spriteFrameTime.current += dt;
+        let frame = prev.frame;
+        if (spriteFrameTime.current > 140) {
+          frame = (prev.frame + 1) % spriteFrames.length;
+          spriteFrameTime.current = 0;
+        }
+
+        const flip = dx < 0;
+
+        const clampedX = Math.max(0, Math.min(GRID_PIXEL_SIZE, nx));
+        const clampedY = Math.max(0, Math.min(GRID_PIXEL_SIZE, ny));
+
+        return {
+          x: clampedX,
+          y: clampedY,
+          frame,
+          flip,
+          visible: true,
+        };
+      });
+
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [pan.x, pan.y, zoom, GRID_PIXEL_SIZE]);
+
   useEffect(() => {
     if (!backgroundTile?.url) {
       setDotColor("rgba(148, 163, 184, 0.9)");
@@ -129,9 +261,7 @@ const App: React.FC = () => {
       }
       const avg = total / Math.max(1, count);
       setDotColor(
-        avg > 0.6
-          ? "rgba(30, 41, 59, 0.7)"
-          : "rgba(241, 245, 249, 0.8)",
+        avg > 0.6 ? "rgba(30, 41, 59, 0.7)" : "rgba(241, 245, 249, 0.8)",
       );
     };
     img.onerror = () => {
@@ -139,21 +269,7 @@ const App: React.FC = () => {
     };
   }, [backgroundTile?.url]);
 
-  const {
-    zoom,
-    pan,
-    isPanning,
-    isSpacePressed,
-    canvasRef,
-    setZoom,
-    setPan,
-    setIsPanning,
-    setIsSpacePressed,
-    handleWheel,
-    handleCanvasMouseDown,
-    getCenteredGridPoint,
-    centerCanvas,
-  } = useCanvasNavigation();
+  // useCanvasNavigation() destructured earlier to avoid TDZ when other logic references `pan`/`zoom`
 
   const {
     catalogLoading,
@@ -359,6 +475,28 @@ const App: React.FC = () => {
               <span className="grid-tape__edge grid-tape__edge--left" />
               <span className="grid-tape__edge grid-tape__edge--right" />
             </div>
+            {spriteState.visible && (
+              <div
+                className="absolute pointer-events-none"
+                style={{
+                  left: spriteState.x - spriteSize / 2,
+                  top: spriteState.y - spriteSize / 2,
+                  width: spriteSize,
+                  height: spriteSize,
+                  transform: `scaleX(${spriteState.flip ? -1 : 1})`,
+                  transition: "transform 120ms ease-out",
+                  zIndex: 25,
+                }}
+              >
+                <div className="sprite-bob w-full h-full">
+                  <img
+                    src={spriteFrames[spriteState.frame]}
+                    alt="Wandering sprite"
+                    className="w-full h-full object-contain drop-shadow-md"
+                  />
+                </div>
+              </div>
+            )}
             {beds.map((bed) => (
               <GardenBedView
                 key={bed.id}
