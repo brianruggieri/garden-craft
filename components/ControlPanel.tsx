@@ -51,7 +51,6 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   beds,
   seeds,
   sunOrientation,
-  layouts,
   veggieMetadata,
   seedVarieties,
   veggieTypes,
