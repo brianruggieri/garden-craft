@@ -5,11 +5,12 @@ import {
   VeggieType,
   SunOrientation,
   BedLayout,
-  BedShape,
-  SeedVariety,
 } from "./shared/types";
 import ControlPanel from "./components/ControlPanel";
 import GardenBedView from "./components/GardenBedView";
+import ContextBar from "./components/ContextBar";
+import CatalogStatusBanner from "./components/CatalogStatusBanner";
+import VeggieLegend from "./components/VeggieLegend";
 import { generateGardenLayout } from "./services/geminiService";
 import { GRID_SIZE } from "./constants";
 import { useGardenStorage } from "./hooks/useGardenStorage";
@@ -18,6 +19,9 @@ import { useSeedInit } from "./hooks/useSeedInit";
 import { useAIProviders } from "./hooks/useAIProviders";
 import { useCanvasNavigation } from "./hooks/useCanvasNavigation";
 import { useBedDrag } from "./hooks/useBedDrag";
+import { useAddBed } from "./hooks/useAddBed";
+import { useBedHandlers } from "./hooks/useBedHandlers";
+import { useSeedHandlers } from "./hooks/useSeedHandlers";
 
 const App: React.FC = () => {
   const [beds, setBeds] = useState<GardenBed[]>([
@@ -103,46 +107,32 @@ const App: React.FC = () => {
     setIsPanning,
   });
 
-  const handleAddBed = () => {
-    const newId = Math.random().toString(36).substr(2, 9);
-    const { centerX, centerY } = getCenteredGridPoint(pan, zoom);
+  const { handleAddBed } = useAddBed({
+    setBeds,
+    getCenteredGridPoint,
+    pan,
+    zoom,
+  });
 
-    setBeds((prev) => [
-      ...prev,
-      {
-        id: newId,
-        name: `Bed ${prev.length + 1}`,
-        width: 48,
-        height: 48,
-        x: Math.round(centerX),
-        y: Math.round(centerY),
-        shape: "rectangle",
-      },
-    ]);
-  };
+  const {
+    selectedBed,
+    handleRemoveBed,
+    handleUpdateBedName,
+    handleUpdateBedShape,
+    handleUpdateBedWidth,
+    handleUpdateBedHeight,
+  } = useBedHandlers({
+    beds,
+    setBeds,
+    selectedBedId,
+    setSelectedBedId,
+  });
 
-  const handleRemoveBed = (id: string) => {
-    setBeds((prev) => prev.filter((b) => b.id !== id));
-    if (selectedBedId === id) setSelectedBedId(null);
-  };
+  const { handleUpdateSeed, handleUpdateVarieties } = useSeedHandlers({
+    setSeeds,
+  });
 
-  const handleUpdateSeed = (type: VeggieType, priority: number) => {
-    setSeeds((prev) =>
-      prev.map((s) => (s.type === type ? { ...s, priority } : s)),
-    );
-  };
-
-  const handleUpdateVarieties = (
-    type: VeggieType,
-    varieties: SeedVariety[],
-  ) => {
-    setSeeds((prev) =>
-      prev.map((s) =>
-        s.type === type ? { ...s, selectedVarieties: varieties } : s,
-      ),
-    );
-  };
-
+  // Layout generation
   const handleGenerate = async () => {
     if (beds.length === 0) return;
     // Allow proceeding even if varieties aren't picked; service will use defaults
@@ -174,8 +164,6 @@ const App: React.FC = () => {
       setIsGenerating(false);
     }
   };
-
-  const selectedBed = beds.find((b) => b.id === selectedBedId);
 
   return (
     <div className="flex h-screen w-full bg-[#f8fafc] overflow-hidden select-none text-slate-800">
@@ -219,150 +207,19 @@ const App: React.FC = () => {
       />
 
       <main className="flex-1 relative flex flex-col overflow-hidden">
-        {catalogLoading && (
-          <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-xs font-bold px-4 py-2">
-            Loading plant catalog...
-          </div>
-        )}
-        {catalogError && (
-          <div className="bg-red-50 border-b border-red-200 text-red-700 text-xs font-bold px-4 py-2">
-            {catalogError}
-          </div>
-        )}
+        <CatalogStatusBanner
+          catalogLoading={catalogLoading}
+          catalogError={catalogError}
+        />
         {/* Optimized Context Bar with High Contrast */}
-        <div className="bg-white border-b border-slate-300 p-4 flex justify-between items-center z-30 shadow-md">
-          <div className="flex gap-8 items-center">
-            <div className="flex items-center gap-3">
-              <div className="bg-emerald-700 p-2 rounded-xl shadow-sm">
-                <i className="fas fa-layer-group text-white text-sm"></i>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest leading-none mb-1">
-                  Canvas Mode
-                </span>
-                <span className="text-xs font-bold text-slate-900">
-                  Precision Planning
-                </span>
-              </div>
-            </div>
-            <div className="h-8 w-[1px] bg-slate-200"></div>
-            <div className="flex items-center gap-3">
-              <div className="bg-orange-600 p-2 rounded-xl shadow-sm">
-                <i className="fas fa-compass text-white text-sm"></i>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest leading-none mb-1">
-                  Solar Bias
-                </span>
-                <span className="text-xs font-bold text-slate-900">
-                  {sunOrientation} Axis
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {selectedBed && (
-            <div className="flex gap-6 animate-in fade-in slide-in-from-right-4 duration-500 items-center bg-white px-5 py-2.5 rounded-2xl border border-slate-400 shadow-2xl">
-              <div className="flex flex-col gap-1.5 pr-6 border-r border-slate-300">
-                <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">
-                  Name
-                </span>
-                <input
-                  type="text"
-                  className="bg-slate-50 border-2 border-slate-300 rounded-lg px-3 py-1.5 text-sm font-black outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 min-w-[140px]"
-                  value={selectedBed.name || ""}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setBeds((prev) =>
-                      prev.map((b) =>
-                        b.id === selectedBedId ? { ...b, name: val } : b,
-                      ),
-                    );
-                  }}
-                  placeholder="Bed Name"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5 pr-6 border-r border-slate-300">
-                <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">
-                  Shape
-                </span>
-                <select
-                  className="bg-slate-50 border-2 border-slate-300 rounded-lg px-3 py-1.5 text-sm font-black outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 cursor-pointer"
-                  value={selectedBed.shape || "rectangle"}
-                  onChange={(e) => {
-                    const newShape = e.target.value as BedShape;
-                    setBeds((prev) =>
-                      prev.map((b) =>
-                        b.id === selectedBedId
-                          ? {
-                              ...b,
-                              shape: newShape,
-                              height:
-                                newShape === "circle" ? b.width : b.height,
-                            }
-                          : b,
-                      ),
-                    );
-                  }}
-                >
-                  <option value="rectangle">Rectangle</option>
-                  <option value="pill">Pill</option>
-                  <option value="circle">Circle</option>
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">
-                  Size (inches)
-                </span>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    className="w-24 p-1.5 bg-slate-50 border-2 border-slate-300 rounded-lg text-sm font-black text-center outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900"
-                    value={selectedBed.width}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value) || 0;
-                      setBeds((prev) =>
-                        prev.map((b) =>
-                          b.id === selectedBedId
-                            ? {
-                                ...b,
-                                width: val,
-                                height: b.shape === "circle" ? val : b.height,
-                              }
-                            : b,
-                        ),
-                      );
-                    }}
-                  />
-                  {selectedBed.shape !== "circle" && (
-                    <>
-                      <span className="text-slate-600 font-black">×</span>
-                      <input
-                        type="number"
-                        className="w-24 p-1.5 bg-slate-50 border-2 border-slate-300 rounded-lg text-sm font-black text-center outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900"
-                        value={selectedBed.height}
-                        onChange={(e) =>
-                          setBeds((prev) =>
-                            prev.map((b) =>
-                              b.id === selectedBedId
-                                ? {
-                                    ...b,
-                                    height: parseInt(e.target.value) || 0,
-                                  }
-                                : b,
-                            ),
-                          )
-                        }
-                      />
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        <ContextBar
+          sunOrientation={sunOrientation}
+          selectedBed={selectedBed}
+          onUpdateBedName={handleUpdateBedName}
+          onUpdateBedShape={handleUpdateBedShape}
+          onUpdateBedWidth={handleUpdateBedWidth}
+          onUpdateBedHeight={handleUpdateBedHeight}
+        />
 
         <div
           id="garden-viewport"
@@ -458,26 +315,10 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white border-t border-slate-300 p-4 flex flex-wrap gap-5 justify-center z-30 shadow-inner">
-          {veggieTypes.map((value) => {
-            const meta = plantMetadata[value];
-            if (!meta) return null;
-            return (
-              <div
-                key={value}
-                className="flex items-center gap-2 group cursor-default"
-              >
-                <div
-                  className="w-4 h-4 rounded-full border border-black/20 shadow-sm transition-transform group-hover:scale-125"
-                  style={{ backgroundColor: meta.color }}
-                ></div>
-                <span className="text-[11px] font-black text-slate-900 group-hover:text-emerald-800 transition-colors uppercase tracking-[0.15em]">
-                  {value}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+        <VeggieLegend
+          veggieTypes={veggieTypes}
+          plantMetadata={plantMetadata}
+        />
       </main>
     </div>
   );
