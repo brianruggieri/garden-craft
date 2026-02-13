@@ -126,23 +126,39 @@ const App: React.FC = () => {
   const BALL_DIAMETER_CANVAS =
     (BALL_DIAMETER_INCHES / INCHES_PER_GRID) * GRID_SIZE;
 
-  // Canvas navigation hook (existing)
   const {
-    zoom,
-    pan,
-    isPanning,
-    isSpacePressed,
-    canvasRef,
-    zoomByDelta,
-    zoomTo,
-    setPan,
-    setIsPanning,
-    setIsSpacePressed,
-    handleWheel,
-    handleCanvasMouseDown,
-    getCenteredGridPoint,
-    centerCanvas,
-  } = useCanvasNavigation();
+    savedGardens,
+    savedPlantings,
+    handleSaveGarden,
+    handleLoadGarden,
+    handleSavePlanting,
+    handleLoadPlanting,
+  } = useGardenStorage({
+    beds,
+    sunOrientation,
+    seeds,
+    layouts,
+    setBeds,
+    setSunOrientation,
+    setSeeds,
+    setLayouts,
+  });
+
+  const {
+    aiProvider,
+    aiModel,
+    aiApiKey,
+    aiProviders,
+    setAiProvider,
+    setAiModel,
+    setAiApiKey,
+    oauthStatus,
+    oauthChecking,
+    handleTriggerOAuth,
+    handleStartDeviceFlow,
+    handlePollDeviceFlow,
+    handleDisconnectProvider,
+  } = useAIProviders();
 
   // load tiles (unchanged)
   useEffect(() => {
@@ -189,6 +205,155 @@ const App: React.FC = () => {
   const isGrassVibe =
     (backgroundTile?.name || "").toLowerCase() === "grass" ||
     (backgroundTile?.id || "").startsWith("grass");
+
+  const {
+    zoom,
+    pan,
+    isPanning,
+    isSpacePressed,
+    canvasRef,
+    zoomByDelta,
+    zoomTo,
+    setPan,
+    setIsPanning,
+    setIsSpacePressed,
+    handleWheel,
+    handleCanvasMouseDown,
+    getCenteredGridPoint,
+    centerCanvas,
+  } = useCanvasNavigation();
+
+  const { onBedDragStart } = useBedDrag({
+    beds,
+    setBeds,
+    pan,
+    zoom,
+    isPanning,
+    setPan,
+    isSpacePressed,
+    setSelectedBedId,
+    setIsPanning,
+  });
+
+  const getViewportBounds = () => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    const left = -pan.x / zoom;
+    const top = -pan.y / zoom;
+    const right = (rect.width - pan.x) / zoom;
+    const bottom = (rect.height - pan.y) / zoom;
+    return { left, top, right, bottom };
+  };
+
+  const pickEdgeTarget = () => {
+    const bounds = getViewportBounds();
+    if (!bounds) return { x: 0, y: 0 };
+    const { left, top, right, bottom } = bounds;
+    const inset = 40;
+    const offset = 28;
+    const edge = Math.floor(Math.random() * 4);
+    const rand = (min: number, max: number) =>
+      min + Math.random() * Math.max(1, max - min);
+    if (edge === 0) {
+      return { x: rand(left + inset, right - inset), y: top - offset };
+    }
+    if (edge === 1) {
+      return { x: right + offset, y: rand(top + inset, bottom - inset) };
+    }
+    if (edge === 2) {
+      return { x: rand(left + inset, right - inset), y: bottom + offset };
+    }
+    return { x: left - offset, y: rand(top + inset, bottom - inset) };
+  };
+
+  const {
+    catalogLoading,
+    catalogError,
+    plantMetadata,
+    seedVarieties,
+    veggieTypes,
+  } = usePlantCatalog();
+
+  useSeedInit({ seeds, setSeeds, veggieTypes });
+
+  const { handleAddBed } = useAddBed({
+    setBeds,
+    getCenteredGridPoint,
+    pan,
+    zoom,
+  });
+
+  const {
+    selectedBed,
+    handleRemoveBed,
+    handleUpdateBedName,
+    handleUpdateBedShape,
+    handleUpdateBedWidth,
+    handleUpdateBedHeight,
+  } = useBedHandlers({
+    beds,
+    setBeds,
+    selectedBedId,
+    setSelectedBedId,
+  });
+
+  const { handleUpdateSeed, handleUpdateVarieties } = useSeedHandlers({
+    setSeeds,
+  });
+
+  // Layout generation
+  const handleGenerate = async () => {
+    if (beds.length === 0) return;
+    // Allow proceeding even if varieties aren't picked; service will use defaults
+    const activeVegetables = seeds.filter((s) => s.priority > 0);
+    if (activeVegetables.length === 0) {
+      alert(
+        "Please increase the priority of at least one vegetable to generate a layout.",
+      );
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const result = await generateGardenLayout(
+        beds,
+        activeVegetables,
+        sunOrientation,
+        {
+          provider: aiProvider,
+          model: aiModel || undefined,
+          auth: aiApiKey ? { apiKey: aiApiKey } : undefined,
+        },
+      );
+      setLayouts(result);
+    } catch (err) {
+      console.error(err);
+      alert("Something went wrong generating the layout.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSetSun = (orient: SunOrientation) => {
+    setSunOrientation(orient);
+    const angleMap: Record<SunOrientation, number> = {
+      North: 0,
+      East: 90,
+      South: 180,
+      West: 270,
+    };
+    setSunAngleState(angleMap[orient]);
+  };
+
+  const bedShadow = useMemo(() => {
+    if (!sunEnabled) return "none" as const;
+    const distance = GRID_SIZE * 1.2;
+    const radians = (sunAngle * Math.PI) / 180;
+    return {
+      dx: -Math.sin(radians) * distance,
+      dy: Math.cos(radians) * distance,
+    };
+  }, [sunAngle, sunEnabled]);
 
   // Sprite update tick (unchanged from prior working implementation)
   useEffect(() => {
@@ -730,51 +895,54 @@ const App: React.FC = () => {
         seeds={seeds}
         sunOrientation={sunOrientation}
         layouts={layouts}
-        veggieMetadata={{} as any}
-        seedVarieties={[] as any}
-        veggieTypes={[] as VeggieType[]}
-        onAddBed={() => {}}
-        onRemoveBed={() => {}}
-        onUpdateSeed={() => {}}
-        onUpdateVarieties={() => {}}
-        onSetSun={() => {}}
+        veggieMetadata={plantMetadata}
+        seedVarieties={seedVarieties}
+        veggieTypes={veggieTypes}
+        onAddBed={handleAddBed}
+        onRemoveBed={handleRemoveBed}
+        onUpdateSeed={handleUpdateSeed}
+        onUpdateVarieties={handleUpdateVarieties}
+        onSetSun={handleSetSun}
         sunEnabled={sunEnabled}
         sunAngle={sunAngle}
-        onSetSunAngle={() => {}}
+        onSetSunAngle={setSunAngleState}
         onToggleSun={() => setSunEnabled((p) => !p)}
-        onGenerate={() => {}}
+        onGenerate={handleGenerate}
         isGenerating={isGenerating}
-        onSaveGarden={() => {}}
-        onLoadGarden={() => {}}
-        onSavePlanting={() => {}}
-        onLoadPlanting={() => {}}
-        savedGardens={[]}
-        savedPlantings={[]}
+        onSaveGarden={handleSaveGarden}
+        onLoadGarden={handleLoadGarden}
+        onSavePlanting={handleSavePlanting}
+        onLoadPlanting={handleLoadPlanting}
+        savedGardens={savedGardens}
+        savedPlantings={savedPlantings}
         onSelectBed={(id) => setSelectedBedId(id)}
         backgroundTile={backgroundTile}
         backgroundOptions={backgroundTiles}
         onChangeBackgroundTile={(tile) => setBackgroundTileId(tile.id)}
-        aiProvider={""}
-        aiModel={""}
-        aiApiKey={""}
-        aiProviders={[]}
-        onChangeAIProvider={() => {}}
-        onChangeAIModel={() => {}}
-        onChangeAIApiKey={() => {}}
-        onTriggerOAuth={() => {}}
-        oauthStatus={null}
-        oauthChecking={false}
+        aiProvider={aiProvider}
+        aiModel={aiModel}
+        aiApiKey={aiApiKey}
+        aiProviders={aiProviders}
+        onChangeAIProvider={setAiProvider}
+        onChangeAIModel={setAiModel}
+        onChangeAIApiKey={setAiApiKey}
+        onTriggerOAuth={handleTriggerOAuth}
+        oauthStatus={oauthStatus}
+        oauthChecking={oauthChecking}
       />
 
       <main className="flex-1 relative flex flex-col overflow-hidden">
-        <CatalogStatusBanner catalogLoading={false} catalogError={null} />
+        <CatalogStatusBanner
+          catalogLoading={catalogLoading}
+          catalogError={catalogError}
+        />
         <ContextBar
           sunOrientation={sunOrientation}
-          selectedBed={null}
-          onUpdateBedName={() => {}}
-          onUpdateBedShape={() => {}}
-          onUpdateBedWidth={() => {}}
-          onUpdateBedHeight={() => {}}
+          selectedBed={selectedBed}
+          onUpdateBedName={handleUpdateBedName}
+          onUpdateBedShape={handleUpdateBedShape}
+          onUpdateBedWidth={handleUpdateBedWidth}
+          onUpdateBedHeight={handleUpdateBedHeight}
         />
 
         <div
@@ -866,11 +1034,11 @@ const App: React.FC = () => {
                 key={bed.id}
                 bed={bed}
                 layout={layouts.find((l) => l.bedId === bed.id)}
-                veggieMetadata={{} as any}
-                onDragStart={() => {}}
+                veggieMetadata={plantMetadata}
+                onDragStart={onBedDragStart}
                 isSelected={selectedBedId === bed.id}
                 onClick={() => setSelectedBedId(bed.id)}
-                bedShadow={{ dx: 0, dy: 0 }}
+                bedShadow={bedShadow}
               />
             ))}
           </div>
@@ -910,7 +1078,16 @@ const App: React.FC = () => {
               <i className="fas fa-hand"></i>
             </button>
           </div>
-
+          <div className="absolute bottom-8 right-8 bg-white/95 backdrop-blur-sm rounded-2xl border border-slate-200 shadow-xl px-4 py-3 z-30">
+            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+              <i className="fas fa-ruler-combined text-emerald-600"></i> Scale
+            </div>
+            <div className="mt-2 flex items-center gap-3 text-[11px] font-bold text-slate-700">
+              <span>{INCHES_PER_GRID}" per dot</span>
+              <span className="text-slate-300">•</span>
+              <span>1 ft = {(12 / INCHES_PER_GRID).toFixed(0)} dots</span>
+            </div>
+          </div>
           {/* Exposed secret button for testing */}
           {isGrassVibe && (
             <>
@@ -1014,8 +1191,8 @@ const App: React.FC = () => {
         </div>
 
         <VeggieLegend
-          veggieTypes={[] as VeggieType[]}
-          plantMetadata={{} as any}
+          veggieTypes={veggieTypes}
+          plantMetadata={plantMetadata}
         />
       </main>
 

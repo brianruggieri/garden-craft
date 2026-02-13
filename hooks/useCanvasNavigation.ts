@@ -10,6 +10,8 @@ export const useCanvasNavigation = () => {
   const [isPanning, setIsPanning] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const panRef = useRef<Pan>(pan);
+  const zoomRef = useRef(zoom);
 
   const getCenteredPan = (zoomValue: number) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -40,6 +42,14 @@ export const useCanvasNavigation = () => {
   useEffect(() => {
     setPan(getCenteredPan(zoom));
   }, []);
+
+  useEffect(() => {
+    panRef.current = pan;
+  }, [pan]);
+
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
 
   const clampPan = (panValue: Pan, zoomValue: number) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -72,27 +82,29 @@ export const useCanvasNavigation = () => {
   const zoomAroundVisibleGridCenter = (nextZoom: number, prevZoom: number) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const centerScreen = { x: rect.width / 2, y: rect.height / 2 };
-    setPan((prevPan) => {
-      const viewLeft = -prevPan.x / prevZoom;
-      const viewTop = -prevPan.y / prevZoom;
-      const viewRight = (rect.width - prevPan.x) / prevZoom;
-      const viewBottom = (rect.height - prevPan.y) / prevZoom;
+    const prevPan = panRef.current;
+    const viewLeft = -prevPan.x / prevZoom;
+    const viewTop = -prevPan.y / prevZoom;
+    const viewRight = (rect.width - prevPan.x) / prevZoom;
+    const viewBottom = (rect.height - prevPan.y) / prevZoom;
 
-      const visibleLeft = Math.max(0, viewLeft);
-      const visibleTop = Math.max(0, viewTop);
-      const visibleRight = Math.min(GRID_PIXEL_SIZE, viewRight);
-      const visibleBottom = Math.min(GRID_PIXEL_SIZE, viewBottom);
+    const visibleLeft = Math.max(0, viewLeft);
+    const visibleTop = Math.max(0, viewTop);
+    const visibleRight = Math.min(GRID_PIXEL_SIZE, viewRight);
+    const visibleBottom = Math.min(GRID_PIXEL_SIZE, viewBottom);
 
-      const worldX = (visibleLeft + visibleRight) / 2;
-      const worldY = (visibleTop + visibleBottom) / 2;
+    const worldX = (visibleLeft + visibleRight) / 2;
+    const worldY = (visibleTop + visibleBottom) / 2;
 
-      const nextPan = {
-        x: centerScreen.x - worldX * nextZoom,
-        y: centerScreen.y - worldY * nextZoom,
-      };
-      return clampPan(nextPan, nextZoom);
-    });
+    const centerScreenX = worldX * prevZoom + prevPan.x;
+    const centerScreenY = worldY * prevZoom + prevPan.y;
+
+    const nextPan = {
+      x: centerScreenX - worldX * nextZoom,
+      y: centerScreenY - worldY * nextZoom,
+    };
+
+    setPan(clampPan(nextPan, nextZoom));
   };
 
   useEffect(() => {
@@ -104,11 +116,10 @@ export const useCanvasNavigation = () => {
       e.preventDefault();
       const delta = -e.deltaY;
       const factor = Math.pow(1.1, delta / 100);
-      setZoom((prev) => {
-        const nextZoom = clampZoom(prev * factor);
-        zoomAroundVisibleGridCenter(nextZoom, prev);
-        return nextZoom;
-      });
+      const prevZoom = zoomRef.current;
+      const nextZoom = clampZoom(prevZoom * factor);
+      zoomAroundVisibleGridCenter(nextZoom, prevZoom);
+      setZoom(nextZoom);
     } else if (!isSpacePressed) {
       setPan((prev) =>
         clampPan(
@@ -139,18 +150,18 @@ export const useCanvasNavigation = () => {
     isPanning,
     isSpacePressed,
     canvasRef,
-    zoomByDelta: (delta: number) =>
-      setZoom((prev) => {
-        const nextZoom = clampZoom(prev + delta);
-        zoomAroundVisibleGridCenter(nextZoom, prev);
-        return nextZoom;
-      }),
-    zoomTo: (value: number) =>
-      setZoom((prev) => {
-        const nextZoom = clampZoom(value);
-        zoomAroundVisibleGridCenter(nextZoom, prev);
-        return nextZoom;
-      }),
+    zoomByDelta: (delta: number) => {
+      const prevZoom = zoomRef.current;
+      const nextZoom = clampZoom(prevZoom + delta);
+      zoomAroundVisibleGridCenter(nextZoom, prevZoom);
+      setZoom(nextZoom);
+    },
+    zoomTo: (value: number) => {
+      const prevZoom = zoomRef.current;
+      const nextZoom = clampZoom(value);
+      zoomAroundVisibleGridCenter(nextZoom, prevZoom);
+      setZoom(nextZoom);
+    },
     setPan: (next: Pan | ((prev: Pan) => Pan)) =>
       setPan((prev) => clampPan(typeof next === "function" ? next(prev) : next, zoom)),
     setIsPanning,
