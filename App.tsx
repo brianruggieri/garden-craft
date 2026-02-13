@@ -98,7 +98,6 @@ const App: React.FC = () => {
   // --- Ball easter-egg state & refs ---
   const [ballMode, setBallMode] = useState(false);
   const [isDraggingBall, setIsDraggingBall] = useState(false);
-  const [showBallHint, setShowBallHint] = useState(false);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const dragCurrentRef = useRef<{ x: number; y: number } | null>(null);
   const thrownBallsRef = useRef<
@@ -108,6 +107,8 @@ const App: React.FC = () => {
       y: number;
       vx: number;
       vy: number;
+      radius: number;
+      diameter: number;
       elem: HTMLDivElement;
     }[]
   >([]);
@@ -118,6 +119,7 @@ const App: React.FC = () => {
   const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(
     null,
   );
+  const [ballSkin, setBallSkin] = useState<"ball" | "frisbee" | "bone">("ball");
 
   // Ball sizing (6" base scaled by factor)
   const BALL_BASE_INCHES = 6;
@@ -125,7 +127,14 @@ const App: React.FC = () => {
   const BALL_DIAMETER_INCHES = BALL_BASE_INCHES * BALL_SCALE;
   const BALL_DIAMETER_CANVAS =
     (BALL_DIAMETER_INCHES / INCHES_PER_GRID) * GRID_SIZE;
-  const BALL_IMAGE = "/secret/ball.png";
+  const BALL_IMAGE =
+    ballSkin === "frisbee"
+      ? "/secret/frisbee.png"
+      : ballSkin === "bone"
+        ? "/secret/bone.png"
+        : "/secret/ball.png";
+  const BALL_DIAMETER_CURRENT =
+    ballSkin === "frisbee" ? BALL_DIAMETER_CANVAS * 2 : BALL_DIAMETER_CANVAS;
 
   const {
     savedGardens,
@@ -645,9 +654,6 @@ const App: React.FC = () => {
       return { left, top, right: left + width, bottom: top + height };
     });
 
-    const ballDiameterCanvas = BALL_DIAMETER_CANVAS;
-    const ballRadiusCanvas = BALL_DIAMETER_CANVAS / 2;
-
     for (let i = thrownBallsRef.current.length - 1; i >= 0; i--) {
       const b = thrownBallsRef.current[i];
 
@@ -661,10 +667,10 @@ const App: React.FC = () => {
       let collided = false;
       for (const r of bedRects) {
         if (
-          nextX + ballRadiusCanvas > r.left &&
-          nextX - ballRadiusCanvas < r.right &&
-          nextY + ballRadiusCanvas > r.top &&
-          nextY - ballRadiusCanvas < r.bottom
+          nextX + b.radius > r.left &&
+          nextX - b.radius < r.right &&
+          nextY + b.radius > r.top &&
+          nextY - b.radius < r.bottom
         ) {
           collided = true;
           break;
@@ -680,10 +686,10 @@ const App: React.FC = () => {
       }
 
       // Bounce off grid boundaries (simple rigid-body style).
-      const minX = ballRadiusCanvas;
-      const maxX = canvasWidth - ballRadiusCanvas;
-      const minY = ballRadiusCanvas;
-      const maxY = canvasHeight - ballRadiusCanvas;
+      const minX = b.radius;
+      const maxX = canvasWidth - b.radius;
+      const minY = b.radius;
+      const maxY = canvasHeight - b.radius;
 
       if (b.x < minX) {
         b.x = minX;
@@ -705,10 +711,10 @@ const App: React.FC = () => {
         b.vx *= wallFriction;
       }
 
-      b.elem.style.left = `${b.x - ballRadiusCanvas}px`;
-      b.elem.style.top = `${b.y - ballRadiusCanvas}px`;
-      b.elem.style.width = `${ballDiameterCanvas}px`;
-      b.elem.style.height = `${ballDiameterCanvas}px`;
+      b.elem.style.left = `${b.x - b.radius}px`;
+      b.elem.style.top = `${b.y - b.radius}px`;
+      b.elem.style.width = `${b.diameter}px`;
+      b.elem.style.height = `${b.diameter}px`;
 
       const speed = Math.hypot(b.vx, b.vy);
 
@@ -778,11 +784,8 @@ const App: React.FC = () => {
     const canvasY = endCanvas.y;
 
     const id = ++ballCounterRef.current;
-    const elem = createBallElement(
-      canvasX,
-      canvasY,
-      Math.round(BALL_DIAMETER_CANVAS),
-    );
+    const diameter = Math.round(BALL_DIAMETER_CURRENT);
+    const elem = createBallElement(canvasX, canvasY, diameter);
     const gridBoundary = canvasRef.current?.querySelector(
       ".grid-boundary",
     ) as HTMLElement | null;
@@ -793,7 +796,16 @@ const App: React.FC = () => {
       elem.style.transform = "translateZ(0) scale(1)";
     });
 
-    const ball = { id, x: canvasX, y: canvasY, vx, vy, elem };
+    const ball = {
+      id,
+      x: canvasX,
+      y: canvasY,
+      vx,
+      vy,
+      radius: diameter / 2,
+      diameter,
+      elem,
+    };
     thrownBallsRef.current.push(ball);
 
     if (ballAnimRaf.current === null) {
@@ -889,16 +901,6 @@ const App: React.FC = () => {
     setIsDraggingBall(false);
     dragStartRef.current = null;
     dragCurrentRef.current = null;
-
-    try {
-      const key = "garden_craft_ball_hint_shown";
-      const alreadyShown = localStorage.getItem(key);
-      if (willEnable && !alreadyShown) {
-        setShowBallHint(true);
-        localStorage.setItem(key, "1");
-        setTimeout(() => setShowBallHint(false), 6000);
-      }
-    } catch {}
   };
 
   // Cursor class effect (manage ball cursor)
@@ -1113,10 +1115,10 @@ const App: React.FC = () => {
               <div
                 className="absolute pointer-events-none z-50"
                 style={{
-                  left: dragPreviewCanvas.x - BALL_DIAMETER_CANVAS / 2,
-                  top: dragPreviewCanvas.y - BALL_DIAMETER_CANVAS / 2,
-                  width: BALL_DIAMETER_CANVAS,
-                  height: BALL_DIAMETER_CANVAS,
+                  left: dragPreviewCanvas.x - BALL_DIAMETER_CURRENT / 2,
+                  top: dragPreviewCanvas.y - BALL_DIAMETER_CURRENT / 2,
+                  width: BALL_DIAMETER_CURRENT,
+                  height: BALL_DIAMETER_CURRENT,
                   borderRadius: 999,
                   backgroundImage: `url('${BALL_IMAGE}')`,
                   backgroundSize: "cover",
@@ -1231,11 +1233,31 @@ const App: React.FC = () => {
                     {ballMode ? "On" : "Off"}
                   </span>
                 </div>
-                {showBallHint && (
-                  <div className="mt-1 text-[11px] font-normal text-slate-600">
-                    Left-drag to fling. Hold{" "}
-                    <span className="font-mono">Space</span> or use Middle Mouse
-                    to pan. Two-finger drag to pan on touch.
+                {ballMode && (
+                  <div className="mt-2 flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <span className="mr-1">Object</span>
+                    {[
+                      { id: "ball" as const, label: "Ball" },
+                      { id: "frisbee" as const, label: "Frisbee" },
+                      { id: "bone" as const, label: "Bone" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          setBallSkin(opt.id);
+                        }}
+                        className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${
+                          ballSkin === opt.id
+                            ? "bg-slate-900 text-white border-slate-900"
+                            : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
