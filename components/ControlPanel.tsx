@@ -23,6 +23,10 @@ interface ControlPanelProps {
   onUpdateSeed: (type: VeggieType, priority: number) => void;
   onUpdateVarieties: (type: VeggieType, varieties: SeedVariety[]) => void;
   onSetSun: (orient: SunOrientation) => void;
+  sunEnabled: boolean;
+  sunAngle: number;
+  onSetSunAngle: (angle: number) => void;
+  onToggleSun: () => void;
   onGenerate: () => void;
   isGenerating: boolean;
   onSaveGarden: (name: string) => void;
@@ -59,6 +63,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   onUpdateSeed,
   onUpdateVarieties,
   onSetSun,
+  sunEnabled,
+  sunAngle,
+  onSetSunAngle,
+  onToggleSun,
   onGenerate,
   isGenerating,
   onSaveGarden,
@@ -537,9 +545,22 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                 })}
               </div>
             </section><section>
-              <h2 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2">
-                <i className="fas fa-sun text-yellow-500"></i> Sun Exposure
-              </h2>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                  <i className="fas fa-sun text-yellow-500"></i> Sun Exposure
+                </h2>
+                <button
+                  onClick={onToggleSun}
+                  className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-full border ${
+                    sunEnabled
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : "bg-slate-100 text-slate-400 border-slate-200"
+                  }`}
+                  title={sunEnabled ? "Disable shadows" : "Enable shadows"}
+                >
+                  {sunEnabled ? "On" : "Off"}
+                </button>
+              </div>
               <div className="grid grid-cols-4 gap-1">
                 {(["North", "South", "East", "West"] as SunOrientation[]).map(
                   (dir) => (
@@ -556,6 +577,22 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     </button>
                   ),
                 )}
+              </div>
+              <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  <span>Angle (Debug)</span>
+                  <span className="text-slate-600">{Math.round(sunAngle)}°</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="359"
+                  step="1"
+                  value={sunAngle}
+                  onChange={(e) => onSetSunAngle(Number(e.target.value))}
+                  className="mt-2 w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-yellow-500"
+                  disabled={!sunEnabled}
+                />
               </div>
             </section><section>
               <h2 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-2">

@@ -14,6 +14,7 @@ interface GardenBedViewProps {
   onDragStart: (e: React.MouseEvent, id: string) => void;
   isSelected: boolean;
   onClick: () => void;
+  bedShadow?: { dx: number; dy: number } | "none";
 }
 
 const GardenBedView: React.FC<GardenBedViewProps> = ({
@@ -23,10 +24,77 @@ const GardenBedView: React.FC<GardenBedViewProps> = ({
   onDragStart,
   isSelected,
   onClick,
+  bedShadow,
 }) => {
   const [hoveredPlant, setHoveredPlant] = useState<PlantPlacement | null>(null);
   const widthPx = (bed.width / INCHES_PER_GRID) * GRID_SIZE;
   const heightPx = (bed.height / INCHES_PER_GRID) * GRID_SIZE;
+
+  const shadowForShape = () => {
+    if (!bedShadow || bedShadow === "none") return "none";
+    const { dx, dy } = bedShadow;
+    const contactBlur =
+      bed.shape === "circle" ? 4 : bed.shape === "pill" ? 3.5 : 3;
+    const contactDx = dx * 0.12;
+    const contactDy = dy * 0.12;
+    return `${contactDx.toFixed(1)}px ${contactDy.toFixed(1)}px ${contactBlur}px rgba(15, 23, 42, 0.25)`;
+  };
+
+  const shadowHull = (() => {
+    if (!bedShadow || bedShadow === "none") return null;
+    const { dx, dy } = bedShadow;
+    const w = widthPx;
+    const h = heightPx;
+    const minX = Math.min(0, dx);
+    const minY = Math.min(0, dy);
+    const maxX = Math.max(w, w + dx);
+    const maxY = Math.max(h, h + dy);
+    const points = [
+      [0 - minX, 0 - minY],
+      [w - minX, 0 - minY],
+      [w - minX, h - minY],
+      [0 - minX, h - minY],
+      [dx - minX, dy - minY],
+      [dx + w - minX, dy - minY],
+      [dx + w - minX, dy + h - minY],
+      [dx - minX, dy + h - minY],
+    ];
+
+    const cross = (o: number[], a: number[], b: number[]) =>
+      (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+
+    const sorted = points
+      .slice()
+      .sort((a, b) => (a[0] === b[0] ? a[1] - b[1] : a[0] - b[0]));
+    const lower: number[][] = [];
+    for (const p of sorted) {
+      while (lower.length >= 2 &&
+        cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+        lower.pop();
+      }
+      lower.push(p);
+    }
+    const upper: number[][] = [];
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      const p = sorted[i];
+      while (upper.length >= 2 &&
+        cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+        upper.pop();
+      }
+      upper.push(p);
+    }
+    upper.pop();
+    lower.pop();
+    const hull = lower.concat(upper);
+
+    return {
+      hull,
+      width: maxX - minX,
+      height: maxY - minY,
+      offsetX: minX,
+      offsetY: minY,
+    };
+  })();
 
   const handlePlantHover = (e: React.MouseEvent, plant: PlantPlacement) => {
     e.stopPropagation();
@@ -78,8 +146,52 @@ const GardenBedView: React.FC<GardenBedViewProps> = ({
         width: widthPx,
         height: heightPx,
         borderRadius: getBorderRadius(),
+        boxShadow: shadowForShape(),
       }}
     >
+      {shadowHull && (
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            left: shadowHull.offsetX,
+            top: shadowHull.offsetY,
+            width: shadowHull.width,
+            height: shadowHull.height,
+            zIndex: -2,
+          }}
+        >
+          <svg
+            width={shadowHull.width}
+            height={shadowHull.height}
+            className="overflow-visible"
+          >
+            <polygon
+              points={shadowHull.hull.map((p) => `${p[0]},${p[1]}`).join(" ")}
+              fill="rgba(15, 23, 42, 0.28)"
+              style={{
+                filter:
+                  bed.shape === "circle"
+                    ? "blur(18px)"
+                    : bed.shape === "pill"
+                      ? "blur(14px)"
+                      : "blur(12px)",
+              }}
+            />
+            <polygon
+              points={shadowHull.hull.map((p) => `${p[0]},${p[1]}`).join(" ")}
+              fill="rgba(15, 23, 42, 0.38)"
+              style={{
+                filter:
+                  bed.shape === "circle"
+                    ? "blur(8px)"
+                    : bed.shape === "pill"
+                      ? "blur(6px)"
+                      : "blur(5px)",
+              }}
+            />
+          </svg>
+        </div>
+      )}
       {/* Bed Label - Stays on top of soil but under tooltips */}
       <div className="absolute top-3 left-3 flex flex-col items-start gap-1 z-10 pointer-events-none">
         {bed.name && (
